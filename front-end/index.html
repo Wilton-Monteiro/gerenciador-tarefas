@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerenciador de Tarefas</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📋 Gerenciador de Tarefas</h1>
+        </header>
+        
+        <main>
+            <section class="adicionar-tarefa">
+                <form id="form-tarefa">
+                    <input 
+                        type="text" 
+                        id="entrada-tarefa" 
+                        placeholder="Digite uma nova tarefa..." 
+                        required
+                    >
+                    <button type="submit">Adicionar</button>
+                </form>
+            </section>
+            
+            <section class="lista-container">
+                <div class="cabecalho-lista">
+                    <h2>Suas Tarefas</h2>
+                    <button id="botao-excluir-todas" class="botao-excluir-todas">
+                        Excluir Todas
+                    </button>
+                </div>
+                <ul id="lista-tarefas"></ul>
+                <div id="mensagem-vazia" class="mensagem-vazia" style="display: none;">
+                    <p>Nenhuma tarefa encontrada. Adicione uma nova tarefa!</p>
+                </div>
+            </section>
+        </main>
+    </div>
+    
+    <div id="loading" class="loading" style="display: none;">
+        <div class="spinner"></div>
+    </div>
+    
+    <script src="index.js"></script>
+</body>
+</html>
