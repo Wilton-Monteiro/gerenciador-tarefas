@@ -112,59 +112,59 @@ jobs:
 
       - name: Deploy no servidor remoto
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-            docker-compose -f /home/aluno/gerenciador-tarefas/docker-compose.yml down || true
-            docker rmi willmonteiro/gerenciador-tarefas:01 || true
-            docker rmi willmonteiro/gerenciador-tarefas:latest || true
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} 'bash -s' << 'EOF'
+          docker-compose -f /home/aluno/gerenciador-tarefas/docker-compose.yml down || true
+          docker rmi willmonteiro/gerenciador-tarefas:01 || true
+          docker rmi willmonteiro/gerenciador-tarefas:latest || true
 
-            mkdir -p /home/aluno/gerenciador-tarefas
+          mkdir -p /home/aluno/gerenciador-tarefas
 
-            docker pull willmonteiro/gerenciador-tarefas:01
+          docker pull willmonteiro/gerenciador-tarefas:01
 
-            cat > /home/aluno/gerenciador-tarefas/docker-compose.yml << 'COMPOSE_EOF'
-version: '3.8'
+          cat > /home/aluno/gerenciador-tarefas/docker-compose.yml << 'DOCKERCOMPOSE'
+          version: '3.8'
 
-services:
-  app:
-    image: willmonteiro/gerenciador-tarefas:01
-    ports:
-      - "3001:3000"
-    depends_on:
-      - db
-    environment:
-      - DB_HOST=db
-      - DB_PORT=5432
-      - DB_NAME=tarefas_db
-      - DB_USER=postgres
-      - DB_PASSWORD=postgres123
-    networks:
-      - app-network
-    restart: unless-stopped
+          services:
+            app:
+              image: willmonteiro/gerenciador-tarefas:01
+              ports:
+                - "3001:3000"
+              depends_on:
+                - db
+              environment:
+                - DB_HOST=db
+                - DB_PORT=5432
+                - DB_NAME=tarefas_db
+                - DB_USER=postgres
+                - DB_PASSWORD=postgres123
+              networks:
+                - app-network
+              restart: unless-stopped
 
-  db:
-    image: postgres:15-alpine
-    environment:
-      - POSTGRES_DB=tarefas_db
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres123
-    ports:
-      - "5435:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - app-network
-    restart: unless-stopped
+            db:
+              image: postgres:15-alpine
+              environment:
+                - POSTGRES_DB=tarefas_db
+                - POSTGRES_USER=postgres
+                - POSTGRES_PASSWORD=postgres123
+              ports:
+                - "5435:5432"
+              volumes:
+                - postgres_data:/var/lib/postgresql/data
+              networks:
+                - app-network
+              restart: unless-stopped
 
-volumes:
-  postgres_data:
+          volumes:
+            postgres_data:
 
-networks:
-  app-network:
-    driver: bridge
-COMPOSE_EOF
+          networks:
+            app-network:
+              driver: bridge
+          DOCKERCOMPOSE
 
-            cd /home/aluno/gerenciador-tarefas
-            docker-compose up -d
+          cd /home/aluno/gerenciador-tarefas
+          docker-compose up -d
           EOF
 
       - name: Verificar aplicação online
