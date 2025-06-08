@@ -1,0 +1,201 @@
+name: Deploy Automatizado com SonarQube
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Shallow clones should be disabled for better analysis
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_HUB_USERNAME }}
+        password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+    
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true
+        tags: |
+          willmonteiro/gerenciador-tarefas:01
+          willmonteiro/gerenciador-tarefas:latest
+          willmonteiro/gerenciador-tarefas:${{ github.sha }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    
+    - name: Setup SSH key
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+    
+    - name: Run SonarQube Analysis on Remote Server
+      run: |
+        ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
+        # Limpar containers SonarQube anteriores se existirem
+        docker stop sonarqube-temp 2>/dev/null || true
+        docker rm sonarqube-temp 2>/dev/null || true
+        
+        # Iniciar SonarQube temporário
+        docker run -d --name sonarqube-temp \
+          -p 9000:9000 \
+          -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true \
+          sonarqube:community-edition
+        
+        # Aguardar SonarQube inicializar
+        echo "Aguardando SonarQube inicializar..."
+        sleep 60
+        
+        # Verificar se SonarQube está rodando
+        while ! curl -s http://localhost:9000/api/system/status | grep -q "UP"; do
+          echo "SonarQube ainda não está pronto, aguardando..."
+          sleep 10
+        done
+        
+        echo "SonarQube está pronto!"
+        EOF
+    
+    - name: Setup Node.js for SonarQube Scanner
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+    
+    - name: Install SonarQube Scanner
+      run: |
+        npm install -g sonarqube-scanner
+    
+    - name: Run SonarQube Scanner
+      env:
+        SONAR_TOKEN: admin
+        SONAR_HOST_URL: http://${{ secrets.SERVER_HOST }}:9000
+      run: |
+        sonar-scanner \
+          -Dsonar.projectKey=gerenciador-tarefas \
+          -Dsonar.sources=. \
+          -Dsonar.host.url=$SONAR_HOST_URL \
+          -Dsonar.login=admin \
+          -Dsonar.password=admin \
+          -Dsonar.exclusions=node_modules/**,**/node_modules/**,*.log,front-end/styles.css
+    
+    - name: Wait for SonarQube Analysis
+      run: |
+        sleep 30
+        # Verificar o status da análise
+        ANALYSIS_STATUS=$(curl -s -u admin:admin "http://${{ secrets.SERVER_HOST }}:9000/api/qualitygates/project_status?projectKey=gerenciador-tarefas" | jq -r '.projectStatus.status')
+        
+        if [ "$ANALYSIS_STATUS" != "OK" ]; then
+          echo "❌ SonarQube Quality Gate falhou! Status: $ANALYSIS_STATUS"
+          exit 1
+        else
+          echo "✅ SonarQube Quality Gate passou!"
+        fi
+    
+    - name: Cleanup SonarQube Container
+      run: |
+        ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
+        # Parar e remover container SonarQube temporário
+        docker stop sonarqube-temp 2>/dev/null || true
+        docker rm sonarqube-temp 2>/dev/null || true
+        echo "Container SonarQube removido"
+        EOF
+    
+    - name: Deploy to Remote Server
+      run: |
+        ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
+        # Parar e remover containers antigos
+        docker-compose -f /home/aluno/gerenciador-tarefas/docker-compose.yml down 2>/dev/null || true
+        
+        # Remover imagens antigas
+        docker rmi willmonteiro/gerenciador-tarefas:01 2>/dev/null || true
+        docker rmi willmonteiro/gerenciador-tarefas:latest 2>/dev/null || true
+        
+        # Criar diretório se não existir
+        mkdir -p /home/aluno/gerenciador-tarefas
+        
+        # Baixar nova imagem
+        docker pull willmonteiro/gerenciador-tarefas:01
+        
+        # Criar arquivo docker-compose.yml no servidor
+        cat > /home/aluno/gerenciador-tarefas/docker-compose.yml << 'COMPOSE_EOF'
+        version: '3.8'
+        
+        services:
+          app:
+            image: willmonteiro/gerenciador-tarefas:01
+            ports:
+              - "3001:3000"
+            depends_on:
+              - db
+            environment:
+              - DB_HOST=db
+              - DB_PORT=5432
+              - DB_NAME=tarefas_db
+              - DB_USER=postgres
+              - DB_PASSWORD=postgres123
+            networks:
+              - app-network
+            restart: unless-stopped
+        
+          db:
+            image: postgres:15-alpine
+            environment:
+              - POSTGRES_DB=tarefas_db
+              - POSTGRES_USER=postgres
+              - POSTGRES_PASSWORD=postgres123
+            ports:
+              - "5435:5432"
+            volumes:
+              - postgres_data:/var/lib/postgresql/data
+            networks:
+              - app-network
+            restart: unless-stopped
+        
+        volumes:
+          postgres_data:
+        
+        networks:
+          app-network:
+            driver: bridge
+        COMPOSE_EOF
+        
+        # Iniciar containers
+        cd /home/aluno/gerenciador-tarefas
+        docker-compose up -d
+        
+        # Verificar se containers estão rodando
+        sleep 10
+        docker-compose ps
+        
+        echo "Deploy concluído! Aplicação disponível em http://201.23.3.86:3001"
+        EOF
+    
+    - name: Verify Deployment
+      run: |
+        # Aguardar alguns segundos para aplicação inicializar
+        sleep 20
+        
+        # Verificar se aplicação está respondendo
+        HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.SERVER_HOST }}:3001 || echo "000")
+        
+        if [ "$HTTP_STATUS" = "200" ] || [ "$HTTP_STATUS" = "301" ] || [ "$HTTP_STATUS" = "302" ]; then
+          echo "✅ Aplicação está rodando! Status: $HTTP_STATUS"
+          echo "🌐 Acesse: http://${{ secrets.SERVER_HOST }}:3001"
+        else
+          echo "❌ Aplicação não está respondendo. Status: $HTTP_STATUS"
+          exit 1
+        fi
