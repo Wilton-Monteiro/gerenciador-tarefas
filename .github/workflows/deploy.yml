@@ -47,11 +47,9 @@ jobs:
     - name: Start SonarQube temporário no servidor remoto
       run: |
         ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-          # Parar e remover container anterior, se existir
           docker stop sonarqube-temp 2>/dev/null || true
           docker rm sonarqube-temp 2>/dev/null || true
 
-          # Rodar SonarQube em background
           docker run -d --name sonarqube-temp -p 9000:9000 \
             -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true sonarqube:lts-community
 
@@ -64,7 +62,6 @@ jobs:
             echo "Esperando SonarQube... ($i/40)"
             sleep 10
           done
-
           echo "❌ Timeout esperando SonarQube"
           exit 1
         EOF
@@ -116,17 +113,14 @@ jobs:
     - name: Deploy no servidor remoto
       run: |
         ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-          # Parar e remover containers antigos
-          docker-compose -f /home/aluno/gerenciador-tarefas/docker-compose.yml down --remove-orphans || true
-
-          # Remover imagens antigas para evitar conflitos
+          docker-compose -f /home/aluno/gerenciador-tarefas/docker-compose.yml down || true
           docker rmi willmonteiro/gerenciador-tarefas:01 || true
           docker rmi willmonteiro/gerenciador-tarefas:latest || true
 
-          # Criar pasta do projeto, se não existir
           mkdir -p /home/aluno/gerenciador-tarefas
 
-          # Atualizar docker-compose.yml
+          docker pull willmonteiro/gerenciador-tarefas:01
+
           cat > /home/aluno/gerenciador-tarefas/docker-compose.yml << 'COMPOSE_EOF'
 version: '3.8'
 
@@ -169,13 +163,7 @@ networks:
     driver: bridge
 COMPOSE_EOF
 
-          # Entrar na pasta do projeto
           cd /home/aluno/gerenciador-tarefas
-
-          # Puxar imagem atualizada
-          docker-compose pull
-
-          # Subir containers em modo detached
           docker-compose up -d
         EOF
 
