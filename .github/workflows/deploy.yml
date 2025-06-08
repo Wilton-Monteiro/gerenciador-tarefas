@@ -57,17 +57,49 @@ jobs:
           -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true \
           sonarqube:lts-community
         
-        # Aguardar SonarQube inicializar
+        # Aguardar SonarQube inicializar com timeout
         echo "Aguardando SonarQube inicializar..."
-        sleep 60
         
-        # Verificar se SonarQube está rodando
-        while ! curl -s http://localhost:9000/api/system/status | grep -q "UP"; do
-          echo "SonarQube ainda não está pronto, aguardando..."
-          sleep 10
+        # Função para verificar se SonarQube está pronto
+        check_sonarqube() {
+          # Tenta diferentes endpoints para verificar se está funcionando
+          if curl -f -s http://localhost:9000/api/system/health >/dev/null 2>&1; then
+            return 0
+          elif curl -f -s http://localhost:9000/api/system/status >/dev/null 2>&1; then
+            return 0
+          elif curl -f -s http://localhost:9000/ >/dev/null 2>&1; then
+            return 0
+          else
+            return 1
+          fi
+        }
+        
+        # Aguardar até 10 minutos (600 segundos)
+        TIMEOUT=600
+        ELAPSED=0
+        SLEEP_TIME=15
+        
+        while [ $ELAPSED -lt $TIMEOUT ]; do
+          if check_sonarqube; then
+            echo "✅ SonarQube está pronto!"
+            break
+          else
+            echo "SonarQube ainda não está pronto, aguardando... (${ELAPSED}s/${TIMEOUT}s)"
+            sleep $SLEEP_TIME
+            ELAPSED=$((ELAPSED + SLEEP_TIME))
+          fi
         done
         
-        echo "SonarQube está pronto!"
+        # Verificação final
+        if [ $ELAPSED -ge $TIMEOUT ]; then
+          echo "❌ Timeout! SonarQube não ficou pronto em ${TIMEOUT} segundos"
+          docker logs sonarqube-temp --tail 50
+          exit 1
+        fi
+        
+        # Aguardar mais um pouco para garantir que está totalmente inicializado
+        echo "Aguardando inicialização completa..."
+        sleep 30
         EOF
     
     - name: Setup Node.js for SonarQube Scanner
@@ -95,14 +127,31 @@ jobs:
     - name: Wait for SonarQube Analysis
       run: |
         sleep 30
-        # Verificar o status da análise
-        ANALYSIS_STATUS=$(curl -s -u admin:admin "http://${{ secrets.SERVER_HOST }}:9000/api/qualitygates/project_status?projectKey=gerenciador-tarefas" | jq -r '.projectStatus.status')
+        # Verificar o status da análise com retry
+        MAX_ATTEMPTS=5
+        ATTEMPT=1
         
-        if [ "$ANALYSIS_STATUS" != "OK" ]; then
-          echo "❌ SonarQube Quality Gate falhou! Status: $ANALYSIS_STATUS"
+        while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+          echo "Tentativa $ATTEMPT de $MAX_ATTEMPTS para verificar Quality Gate..."
+          
+          ANALYSIS_STATUS=$(curl -s -u admin:admin "http://${{ secrets.SERVER_HOST }}:9000/api/qualitygates/project_status?projectKey=gerenciador-tarefas" | jq -r '.projectStatus.status' 2>/dev/null || echo "ERROR")
+          
+          if [ "$ANALYSIS_STATUS" = "OK" ]; then
+            echo "✅ SonarQube Quality Gate passou!"
+            break
+          elif [ "$ANALYSIS_STATUS" = "ERROR" ] || [ "$ANALYSIS_STATUS" = "null" ]; then
+            echo "⚠️ Erro ao obter status da análise, tentando novamente..."
+            sleep 10
+            ATTEMPT=$((ATTEMPT + 1))
+          else
+            echo "❌ SonarQube Quality Gate falhou! Status: $ANALYSIS_STATUS"
+            exit 1
+          fi
+        done
+        
+        if [ $ATTEMPT -gt $MAX_ATTEMPTS ]; then
+          echo "❌ Não foi possível verificar o Quality Gate após $MAX_ATTEMPTS tentativas"
           exit 1
-        else
-          echo "✅ SonarQube Quality Gate passou!"
         fi
     
     - name: Cleanup SonarQube Container
