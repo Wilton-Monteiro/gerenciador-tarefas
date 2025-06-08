@@ -7,25 +7,25 @@ on:
     branches: [ main ]
 
 jobs:
-  build-and-deploy:
+  build-analyze-deploy:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - name: Checkout code
+    - name: Checkout do código
       uses: actions/checkout@v4
       with:
-        fetch-depth: 0  # Shallow clones should be disabled for better analysis
-    
-    - name: Set up Docker Buildx
+        fetch-depth: 0
+
+    - name: Setup Docker Buildx
       uses: docker/setup-buildx-action@v3
-    
-    - name: Login to Docker Hub
+
+    - name: Login no Docker Hub
       uses: docker/login-action@v3
       with:
         username: ${{ secrets.DOCKER_HUB_USERNAME }}
         password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
-    
-    - name: Build and push Docker image
+
+    - name: Build e push da imagem Docker
       uses: docker/build-push-action@v5
       with:
         context: .
@@ -36,215 +36,156 @@ jobs:
           willmonteiro/gerenciador-tarefas:${{ github.sha }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
-    
-    - name: Setup SSH key
+
+    - name: Setup da chave SSH
       run: |
         mkdir -p ~/.ssh
         echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
         ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
-    
-    - name: Run SonarQube Analysis on Remote Server
+
+    - name: Start SonarQube temporário no servidor remoto
       run: |
         ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-        # Limpar containers SonarQube anteriores se existirem
-        docker stop sonarqube-temp 2>/dev/null || true
-        docker rm sonarqube-temp 2>/dev/null || true
-        
-        # Iniciar SonarQube temporário
-        docker run -d --name sonarqube-temp \
-          -p 9000:9000 \
-          -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true \
-          sonarqube:lts-community
-        
-        # Aguardar SonarQube inicializar com timeout
-        echo "Aguardando SonarQube inicializar..."
-        
-        # Função para verificar se SonarQube está pronto
-        check_sonarqube() {
-          # Tenta diferentes endpoints para verificar se está funcionando
-          if curl -f -s http://localhost:9000/api/system/health >/dev/null 2>&1; then
-            return 0
-          elif curl -f -s http://localhost:9000/api/system/status >/dev/null 2>&1; then
-            return 0
-          elif curl -f -s http://localhost:9000/ >/dev/null 2>&1; then
-            return 0
-          else
-            return 1
-          fi
-        }
-        
-        # Aguardar até 10 minutos (600 segundos)
-        TIMEOUT=600
-        ELAPSED=0
-        SLEEP_TIME=15
-        
-        while [ $ELAPSED -lt $TIMEOUT ]; do
-          if check_sonarqube; then
-            echo "✅ SonarQube está pronto!"
-            break
-          else
-            echo "SonarQube ainda não está pronto, aguardando... (${ELAPSED}s/${TIMEOUT}s)"
-            sleep $SLEEP_TIME
-            ELAPSED=$((ELAPSED + SLEEP_TIME))
-          fi
-        done
-        
-        # Verificação final
-        if [ $ELAPSED -ge $TIMEOUT ]; then
-          echo "❌ Timeout! SonarQube não ficou pronto em ${TIMEOUT} segundos"
-          docker logs sonarqube-temp --tail 50
+          # Parar e remover container anterior, se existir
+          docker stop sonarqube-temp 2>/dev/null || true
+          docker rm sonarqube-temp 2>/dev/null || true
+
+          # Rodar SonarQube em background
+          docker run -d --name sonarqube-temp -p 9000:9000 \
+            -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true sonarqube:lts-community
+
+          echo "Aguardando SonarQube iniciar..."
+          for i in {1..40}; do
+            if curl -s http://localhost:9000/api/system/status | grep -q '"status":"UP"'; then
+              echo "✅ SonarQube está pronto!"
+              exit 0
+            fi
+            echo "Esperando SonarQube... ($i/40)"
+            sleep 10
+          done
+
+          echo "❌ Timeout esperando SonarQube"
           exit 1
-        fi
-        
-        # Aguardar mais um pouco para garantir que está totalmente inicializado
-        echo "Aguardando inicialização completa..."
-        sleep 30
         EOF
-    
-    - name: Setup Node.js for SonarQube Scanner
+
+    - name: Instalar SonarQube Scanner
       uses: actions/setup-node@v4
       with:
         node-version: '18'
-    
-    - name: Install SonarQube Scanner
-      run: |
-        npm install -g sonarqube-scanner
-    
-    - name: Run SonarQube Scanner
+
+    - run: npm install -g sonarqube-scanner
+
+    - name: Rodar análise SonarQube
       env:
-        SONAR_TOKEN: admin
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         SONAR_HOST_URL: http://${{ secrets.SERVER_HOST }}:9000
       run: |
         sonar-scanner \
           -Dsonar.projectKey=gerenciador-tarefas \
           -Dsonar.sources=. \
           -Dsonar.host.url=$SONAR_HOST_URL \
-          -Dsonar.login=admin \
-          -Dsonar.password=admin \
+          -Dsonar.login=$SONAR_TOKEN \
           -Dsonar.exclusions=node_modules/**,**/node_modules/**,*.log,front-end/styles.css
-    
-    - name: Wait for SonarQube Analysis
+
+    - name: Verificar Quality Gate
       run: |
-        sleep 30
-        # Verificar o status da análise com retry
-        MAX_ATTEMPTS=5
-        ATTEMPT=1
-        
-        while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
-          echo "Tentativa $ATTEMPT de $MAX_ATTEMPTS para verificar Quality Gate..."
-          
-          ANALYSIS_STATUS=$(curl -s -u admin:admin "http://${{ secrets.SERVER_HOST }}:9000/api/qualitygates/project_status?projectKey=gerenciador-tarefas" | jq -r '.projectStatus.status' 2>/dev/null || echo "ERROR")
-          
-          if [ "$ANALYSIS_STATUS" = "OK" ]; then
-            echo "✅ SonarQube Quality Gate passou!"
-            break
-          elif [ "$ANALYSIS_STATUS" = "ERROR" ] || [ "$ANALYSIS_STATUS" = "null" ]; then
-            echo "⚠️ Erro ao obter status da análise, tentando novamente..."
-            sleep 10
-            ATTEMPT=$((ATTEMPT + 1))
-          else
-            echo "❌ SonarQube Quality Gate falhou! Status: $ANALYSIS_STATUS"
+        for i in {1..5}; do
+          STATUS=$(curl -s -u ${{ secrets.SONAR_TOKEN }}: "http://${{ secrets.SERVER_HOST }}:9000/api/qualitygates/project_status?projectKey=gerenciador-tarefas" | jq -r '.projectStatus.status')
+          if [ "$STATUS" == "OK" ]; then
+            echo "✅ Quality Gate passou!"
+            exit 0
+          elif [ "$STATUS" == "ERROR" ]; then
+            echo "❌ Quality Gate falhou!"
             exit 1
+          else
+            echo "Tentativa $i/5: aguardando análise..."
+            sleep 10
           fi
         done
-        
-        if [ $ATTEMPT -gt $MAX_ATTEMPTS ]; then
-          echo "❌ Não foi possível verificar o Quality Gate após $MAX_ATTEMPTS tentativas"
-          exit 1
-        fi
-    
-    - name: Cleanup SonarQube Container
+        echo "❌ Timeout aguardando Quality Gate"
+        exit 1
+
+    - name: Parar container SonarQube
       run: |
         ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-        # Parar e remover container SonarQube temporário
-        docker stop sonarqube-temp 2>/dev/null || true
-        docker rm sonarqube-temp 2>/dev/null || true
-        echo "Container SonarQube removido"
+          docker stop sonarqube-temp 2>/dev/null || true
+          docker rm sonarqube-temp 2>/dev/null || true
         EOF
-    
-    - name: Deploy to Remote Server
+
+    - name: Deploy no servidor remoto
       run: |
         ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-        # Parar e remover containers antigos
-        docker-compose -f /home/aluno/gerenciador-tarefas/docker-compose.yml down 2>/dev/null || true
-        
-        # Remover imagens antigas
-        docker rmi willmonteiro/gerenciador-tarefas:01 2>/dev/null || true
-        docker rmi willmonteiro/gerenciador-tarefas:latest 2>/dev/null || true
-        
-        # Criar diretório se não existir
-        mkdir -p /home/aluno/gerenciador-tarefas
-        
-        # Baixar nova imagem
-        docker pull willmonteiro/gerenciador-tarefas:01
-        
-        # Criar arquivo docker-compose.yml no servidor
-        cat > /home/aluno/gerenciador-tarefas/docker-compose.yml << 'COMPOSE_EOF'
-        version: '3.8'
-        
-        services:
-          app:
-            image: willmonteiro/gerenciador-tarefas:01
-            ports:
-              - "3001:3000"
-            depends_on:
-              - db
-            environment:
-              - DB_HOST=db
-              - DB_PORT=5432
-              - DB_NAME=tarefas_db
-              - DB_USER=postgres
-              - DB_PASSWORD=postgres123
-            networks:
-              - app-network
-            restart: unless-stopped
-        
-          db:
-            image: postgres:15-alpine
-            environment:
-              - POSTGRES_DB=tarefas_db
-              - POSTGRES_USER=postgres
-              - POSTGRES_PASSWORD=postgres123
-            ports:
-              - "5435:5432"
-            volumes:
-              - postgres_data:/var/lib/postgresql/data
-            networks:
-              - app-network
-            restart: unless-stopped
-        
-        volumes:
-          postgres_data:
-        
-        networks:
-          app-network:
-            driver: bridge
-        COMPOSE_EOF
-        
-        # Iniciar containers
-        cd /home/aluno/gerenciador-tarefas
-        docker-compose up -d
-        
-        # Verificar se containers estão rodando
-        sleep 10
-        docker-compose ps
-        
-        echo "Deploy concluído! Aplicação disponível em http://201.23.3.86:3001"
+          # Parar e remover containers antigos
+          docker-compose -f /home/aluno/gerenciador-tarefas/docker-compose.yml down --remove-orphans || true
+
+          # Remover imagens antigas para evitar conflitos
+          docker rmi willmonteiro/gerenciador-tarefas:01 || true
+          docker rmi willmonteiro/gerenciador-tarefas:latest || true
+
+          # Criar pasta do projeto, se não existir
+          mkdir -p /home/aluno/gerenciador-tarefas
+
+          # Atualizar docker-compose.yml
+          cat > /home/aluno/gerenciador-tarefas/docker-compose.yml << 'COMPOSE_EOF'
+version: '3.8'
+
+services:
+  app:
+    image: willmonteiro/gerenciador-tarefas:01
+    ports:
+      - "3001:3000"
+    depends_on:
+      - db
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=tarefas_db
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres123
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=tarefas_db
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres123
+    ports:
+      - "5435:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - app-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  app-network:
+    driver: bridge
+COMPOSE_EOF
+
+          # Entrar na pasta do projeto
+          cd /home/aluno/gerenciador-tarefas
+
+          # Puxar imagem atualizada
+          docker-compose pull
+
+          # Subir containers em modo detached
+          docker-compose up -d
         EOF
-    
-    - name: Verify Deployment
+
+    - name: Verificar aplicação online
       run: |
-        # Aguardar alguns segundos para aplicação inicializar
-        sleep 20
-        
-        # Verificar se aplicação está respondendo
-        HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.SERVER_HOST }}:3001 || echo "000")
-        
-        if [ "$HTTP_STATUS" = "200" ] || [ "$HTTP_STATUS" = "301" ] || [ "$HTTP_STATUS" = "302" ]; then
-          echo "✅ Aplicação está rodando! Status: $HTTP_STATUS"
-          echo "🌐 Acesse: http://${{ secrets.SERVER_HOST }}:3001"
+        sleep 15
+        STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.SERVER_HOST }}:3001 || echo "000")
+        if [ "$STATUS" = "200" ] || [ "$STATUS" = "302" ]; then
+          echo "✅ Aplicação está no ar!"
         else
-          echo "❌ Aplicação não está respondendo. Status: $HTTP_STATUS"
+          echo "❌ Erro na aplicação. Status HTTP: $STATUS"
           exit 1
         fi

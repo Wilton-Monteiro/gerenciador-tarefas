@@ -45,7 +45,8 @@ services:
       - "5435:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      # Se tiver script inicial, pode mapear aqui
+      #- ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     networks:
       - app-network
     restart: unless-stopped
