@@ -128,19 +128,25 @@ jobs:
             echo "=== AGUARDANDO SONARQUBE ==="
             TIMEOUT=400
             for i in $(seq 1 $TIMEOUT); do
-              # Verificar se container está rodando
+              # PRIMEIRO: Verificar logs em busca de erros críticos ESPECÍFICOS DE MEMÓRIA
+              LOGS=$(docker logs sonarqube-temp --tail 20 2>&1)
+              if echo "$LOGS" | grep -q "OutOfMemoryError\|java.lang.OutOfMemoryError"; then
+                echo "❌ Erro de memória detectado PRIMEIRO!"
+                echo "=== LOGS COMPLETOS DO ERRO DE MEMÓRIA ==="
+                docker logs sonarqube-temp --tail 50
+                echo "=== RECURSOS ATUAIS DO SISTEMA ==="
+                free -h
+                df -h
+                echo "=== STATUS DOS PROCESSOS JAVA ==="
+                docker exec sonarqube-temp ps aux | grep java || echo "Container inacessível"
+                exit 1
+              fi
+
+              # SEGUNDO: Verificar se container está rodando
               if ! docker ps | grep -q sonarqube-temp; then
                 echo "❌ Container parou de funcionar!"
                 echo "=== LOGS DO CONTAINER ==="
                 docker logs sonarqube-temp --tail 100
-                exit 1
-              fi
-
-              # Verificar logs em busca de erros críticos ESPECÍFICOS
-              LOGS=$(docker logs sonarqube-temp --tail 20 2>&1)
-              if echo "$LOGS" | grep -q "OutOfMemoryError\|java.lang.OutOfMemoryError"; then
-                echo "❌ Erro de memória detectado"
-                docker logs sonarqube-temp --tail 50
                 exit 1
               fi
 
