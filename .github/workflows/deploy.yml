@@ -55,7 +55,7 @@ jobs:
         docker run -d --name sonarqube-temp \
           -p 9000:9000 \
           -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true \
-          sonarqube:community-edition
+          sonarqube:lts-community
         
         # Aguardar SonarQube inicializar
         echo "Aguardando SonarQube inicializar..."
