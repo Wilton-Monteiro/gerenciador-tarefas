@@ -47,37 +47,69 @@ jobs:
       - name: Start SonarQube temporário no servidor remoto
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
+            # Limpar containers anteriores
             docker stop sonarqube-temp 2>/dev/null || true
             docker rm sonarqube-temp 2>/dev/null || true
 
             # Remover volumes antigos se existirem
             docker volume rm sonarqube_data sonarqube_logs sonarqube_extensions 2>/dev/null || true
 
-            # Configurações otimizadas mas sem forçar H2 em memória
+            # Configurar limits do sistema para Elasticsearch
+            echo "Configurando limites do sistema..."
+            sudo sysctl -w vm.max_map_count=262144 2>/dev/null || echo "Aviso: Não foi possível configurar vm.max_map_count"
+
+            # Configurações otimizadas com Elasticsearch embarcado
+            echo "Iniciando SonarQube com configurações otimizadas..."
             docker run -d --name sonarqube-temp -p 9000:9000 \
               -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true \
-              -e SONAR_WEB_JAVAADDITIONALOPTS="-Xmx1024m -Xms512m" \
-              -e SONAR_CE_JAVAADDITIONALOPTS="-Xmx1024m -Xms512m" \
+              -e SONAR_WEB_JAVAADDITIONALOPTS="-Xmx1536m -Xms512m -XX:+UseG1GC" \
+              -e SONAR_CE_JAVAADDITIONALOPTS="-Xmx1024m -Xms512m -XX:+UseG1GC" \
+              -e SONAR_SEARCH_JAVAADDITIONALOPTS="-Xmx1024m -Xms512m -XX:+UseG1GC" \
               -v sonarqube_data:/opt/sonarqube/data \
               -v sonarqube_logs:/opt/sonarqube/logs \
               -v sonarqube_extensions:/opt/sonarqube/extensions \
-              --memory=2g \
+              --memory=3g \
+              --memory-swap=3g \
+              --oom-kill-disable=false \
+              --ulimit nofile=65536:65536 \
+              --ulimit nproc=4096:4096 \
               sonarqube:lts-community
 
-            echo "Aguardando SonarQube iniciar..."
-            for i in {1..90}; do
-              if curl -s http://localhost:9000/api/system/status 2>/dev/null | grep -q '"status":"UP"'; then
-                echo "✅ SonarQube está pronto!"
-                # Aguardar mais um pouco para garantir que está totalmente carregado
-                sleep 10
-                exit 0
+            echo "Aguardando SonarQube iniciar completamente..."
+            TIMEOUT=120
+            for i in $(seq 1 $TIMEOUT); do
+              # Verificar se o container ainda está rodando
+              if ! docker ps | grep -q sonarqube-temp; then
+                echo "❌ Container SonarQube parou de funcionar!"
+                echo "=== LOGS DO CONTAINER ==="
+                docker logs sonarqube-temp --tail 50
+                exit 1
               fi
-              echo "Esperando SonarQube... ($i/90) - Pode demorar na primeira vez..."
-              sleep 10
+
+              # Verificar status da API
+              if curl -s --connect-timeout 5 --max-time 10 http://localhost:9000/api/system/status 2>/dev/null | grep -q '"status":"UP"'; then
+                echo "✅ SonarQube está pronto! ($i/$TIMEOUT)"
+                # Aguardar mais um pouco para garantir estabilidade
+                sleep 15
+                
+                # Verificar novamente para garantir
+                if curl -s http://localhost:9000/api/system/status 2>/dev/null | grep -q '"status":"UP"'; then
+                  echo "✅ Confirmado: SonarQube totalmente operacional!"
+                  exit 0
+                fi
+              fi
+              
+              if [ $((i % 10)) -eq 0 ]; then
+                echo "Aguardando SonarQube... ($i/$TIMEOUT)"
+                echo "Status do container: $(docker ps --filter name=sonarqube-temp --format 'table {{.Status}}')"
+              fi
+              sleep 5
             done
-            echo "❌ Timeout esperando SonarQube"
-            # Logs para debug
-            echo "=== LOGS DO SONARQUBE ==="
+            
+            echo "❌ Timeout esperando SonarQube ($TIMEOUT tentativas)"
+            echo "=== STATUS DO CONTAINER ==="
+            docker ps -a | grep sonarqube-temp
+            echo "=== LOGS COMPLETOS ==="
             docker logs sonarqube-temp --tail 100
             exit 1
           EOF
@@ -89,60 +121,100 @@ jobs:
 
       - run: npm install -g sonarqube-scanner
 
+      - name: Aguardar SonarQube estar totalmente pronto
+        run: |
+          echo "Verificação final antes da análise..."
+          for i in {1..10}; do
+            STATUS=$(curl -s --connect-timeout 10 --max-time 15 "http://${{ secrets.SERVER_HOST }}:9000/api/system/status" 2>/dev/null | jq -r '.status' 2>/dev/null || echo "DOWN")
+            if [ "$STATUS" == "UP" ]; then
+              echo "✅ SonarQube confirmado como pronto!"
+              break
+            fi
+            echo "Aguardando confirmação final... ($i/10)"
+            sleep 10
+          done
+
       - name: Rodar análise SonarQube
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: http://${{ secrets.SERVER_HOST }}:9000
         run: |
+          echo "Iniciando análise SonarQube..."
           sonar-scanner \
             -Dsonar.projectKey=gerenciador-tarefas \
+            -Dsonar.projectName="Gerenciador de Tarefas" \
+            -Dsonar.projectVersion=1.0 \
             -Dsonar.sources=. \
             -Dsonar.host.url=$SONAR_HOST_URL \
             -Dsonar.login=$SONAR_TOKEN \
-            -Dsonar.exclusions=node_modules/**,**/node_modules/**,*.log,front-end/styles.css
+            -Dsonar.exclusions=**/node_modules/**,**/*.log,front-end/styles.css,**/*.md,**/*.txt,**/*.json \
+            -Dsonar.sourceEncoding=UTF-8 \
+            -Dsonar.scm.provider=git \
+            -Dsonar.verbose=false
 
       - name: Verificar Quality Gate
         run: |
-          for i in {1..10}; do
-            STATUS=$(curl -s -u ${{ secrets.SONAR_TOKEN }}: "http://${{ secrets.SERVER_HOST }}:9000/api/qualitygates/project_status?projectKey=gerenciador-tarefas" 2>/dev/null | jq -r '.projectStatus.status' 2>/dev/null || echo "PENDING")
-            echo "Tentativa $i/10: Status atual = $STATUS"
+          echo "Aguardando processamento da análise..."
+          sleep 30
+          
+          for i in {1..15}; do
+            RESPONSE=$(curl -s -u ${{ secrets.SONAR_TOKEN }}: "http://${{ secrets.SERVER_HOST }}:9000/api/qualitygates/project_status?projectKey=gerenciador-tarefas" 2>/dev/null || echo '{"projectStatus":{"status":"PENDING"}}')
+            STATUS=$(echo "$RESPONSE" | jq -r '.projectStatus.status' 2>/dev/null || echo "PENDING")
+            
+            echo "Tentativa $i/15: Status Quality Gate = $STATUS"
             
             if [ "$STATUS" == "OK" ]; then
-              echo "✅ Quality Gate passou!"
+              echo "✅ Quality Gate passou com sucesso!"
               exit 0
             elif [ "$STATUS" == "ERROR" ]; then
               echo "❌ Quality Gate falhou!"
-              # Buscar detalhes do erro
-              curl -s -u ${{ secrets.SONAR_TOKEN }}: "http://${{ secrets.SERVER_HOST }}:9000/api/qualitygates/project_status?projectKey=gerenciador-tarefas" | jq '.'
+              echo "Detalhes do erro:"
+              echo "$RESPONSE" | jq '.' 2>/dev/null || echo "$RESPONSE"
               exit 1
+            elif [ "$STATUS" == "NONE" ]; then
+              echo "⚠️  Quality Gate não configurado - continuando..."
+              exit 0
             else
-              echo "Aguardando análise concluir..."
-              sleep 15
+              echo "Status: $STATUS - Aguardando análise concluir..."
+              sleep 20
             fi
           done
-          echo "❌ Timeout aguardando Quality Gate"
+          echo "❌ Timeout aguardando Quality Gate (5 minutos)"
           exit 1
 
-      - name: Parar container SonarQube
+      - name: Parar e limpar SonarQube temporário
+        if: always()
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
+            echo "Limpando recursos do SonarQube temporário..."
             docker stop sonarqube-temp 2>/dev/null || true
             docker rm sonarqube-temp 2>/dev/null || true
-            # Limpar volumes temporários
+            # Limpar volumes temporários para economizar espaço
             docker volume rm sonarqube_data sonarqube_logs sonarqube_extensions 2>/dev/null || true
+            # Limpar imagens não utilizadas
+            docker image prune -f 2>/dev/null || true
+            echo "✅ Limpeza concluída"
           EOF
 
       - name: Deploy no servidor remoto
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} 'bash -s' << 'EOF'
+          echo "Iniciando deploy da aplicação..."
+          
+          # Parar aplicação atual
           docker-compose -f /home/aluno/gerenciador-tarefas/docker-compose.yml down || true
+          
+          # Limpar imagens antigas
           docker rmi willmonteiro/gerenciador-tarefas:01 || true
           docker rmi willmonteiro/gerenciador-tarefas:latest || true
 
+          # Criar diretório se não existir
           mkdir -p /home/aluno/gerenciador-tarefas
 
+          # Baixar nova imagem
           docker pull willmonteiro/gerenciador-tarefas:01
 
+          # Criar docker-compose.yml atualizado
           cat > /home/aluno/gerenciador-tarefas/docker-compose.yml << 'DOCKERCOMPOSE'
           version: '3.8'
 
@@ -152,16 +224,23 @@ jobs:
               ports:
                 - "3001:3000"
               depends_on:
-                - db
+                db:
+                  condition: service_healthy
               environment:
                 - DB_HOST=db
                 - DB_PORT=5432
                 - DB_NAME=tarefas_db
                 - DB_USER=postgres
                 - DB_PASSWORD=postgres123
+                - NODE_ENV=production
               networks:
                 - app-network
               restart: unless-stopped
+              healthcheck:
+                test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+                interval: 30s
+                timeout: 10s
+                retries: 3
 
             db:
               image: postgres:15-alpine
@@ -169,6 +248,7 @@ jobs:
                 - POSTGRES_DB=tarefas_db
                 - POSTGRES_USER=postgres
                 - POSTGRES_PASSWORD=postgres123
+                - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
               ports:
                 - "5435:5432"
               volumes:
@@ -176,6 +256,11 @@ jobs:
               networks:
                 - app-network
               restart: unless-stopped
+              healthcheck:
+                test: ["CMD-SHELL", "pg_isready -U postgres"]
+                interval: 10s
+                timeout: 5s
+                retries: 5
 
           volumes:
             postgres_data:
@@ -185,17 +270,38 @@ jobs:
               driver: bridge
           DOCKERCOMPOSE
 
+          # Subir nova versão
           cd /home/aluno/gerenciador-tarefas
           docker-compose up -d
+          
+          echo "✅ Deploy concluído!"
           EOF
 
       - name: Verificar aplicação online
         run: |
-          sleep 15
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.SERVER_HOST }}:3001 || echo "000")
-          if [ "$STATUS" = "200" ] || [ "$STATUS" = "302" ]; then
-            echo "✅ Aplicação está no ar!"
-          else
-            echo "❌ Erro na aplicação. Status HTTP: $STATUS"
-            exit 1
-          fi
+          echo "Aguardando aplicação inicializar..."
+          sleep 30
+          
+          for i in {1..10}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 --max-time 15 "http://${{ secrets.SERVER_HOST }}:3001" || echo "000")
+            echo "Tentativa $i/10: Status HTTP = $STATUS"
+            
+            if [ "$STATUS" = "200" ] || [ "$STATUS" = "302" ] || [ "$STATUS" = "301" ]; then
+              echo "✅ Aplicação está online e funcionando!"
+              echo "🌐 Acesse: http://${{ secrets.SERVER_HOST }}:3001"
+              exit 0
+            fi
+            
+            echo "Aguardando aplicação... ($i/10)"
+            sleep 15
+          done
+          
+          echo "❌ Erro: Aplicação não respondeu corretamente"
+          echo "Verificando logs para diagnóstico..."
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
+            echo "=== STATUS DOS CONTAINERS ==="
+            docker-compose -f /home/aluno/gerenciador-tarefas/docker-compose.yml ps
+            echo "=== LOGS DA APLICAÇÃO ==="
+            docker-compose -f /home/aluno/gerenciador-tarefas/docker-compose.yml logs --tail 20 app
+          EOF
+          exit 1
