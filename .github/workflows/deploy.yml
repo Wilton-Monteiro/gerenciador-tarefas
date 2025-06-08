@@ -74,8 +74,11 @@ jobs:
             echo "=== CONFIGURAÇÃO DO SISTEMA ==="
             sudo sysctl -w vm.max_map_count=262144
             sudo sysctl -w fs.file-max=65536
+            # Persistir as configurações (opcional, mas bom para evitar problemas em caso de reboot)
             echo "vm.max_map_count=262144" | sudo tee -a /etc/sysctl.conf
             echo "fs.file-max=65536" | sudo tee -a /etc/sysctl.conf
+            # Aplicar imediatamente (já feito com -w, mas repetir o apply para garantir se o tee foi primeiro)
+            sudo sysctl -p
 
             # Verificar recursos disponíveis
             echo "=== RECURSOS DO SISTEMA ==="
@@ -95,10 +98,10 @@ jobs:
             docker run -d --name sonarqube-temp \
               -p $SONAR_PORT:9000 \
               -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true \
-              -e SONAR_SEARCH_JAVAADDITIONALOPTS="-Xms512m -Xmx1024m -XX:MaxDirectMemorySize=256m" \
+              -e SONAR_SEARCH_JAVAADDITIONALOPTS="-Xms1024m -Xmx1024m -XX:MaxDirectMemorySize=256m" \
               -e SONAR_WEB_JAVAADDITIONALOPTS="-Xms1024m -Xmx2048m -XX:+UseG1GC" \
               -e SONAR_CE_JAVAADDITIONALOPTS="-Xms512m -Xmx1024m -XX:+UseG1GC" \
-              -e ES_JAVA_OPTS="-Xms512m -Xmx1024m" \
+              -e ES_JAVA_OPTS="-Xms1024m -Xmx1024m" \
               -v sonarqube_temp_data:/opt/sonarqube/data \
               -v sonarqube_temp_logs:/opt/sonarqube/logs \
               -v sonarqube_temp_extensions:/opt/sonarqube/extensions \
