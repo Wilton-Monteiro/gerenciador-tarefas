@@ -50,19 +50,29 @@ jobs:
             docker stop sonarqube-temp 2>/dev/null || true
             docker rm sonarqube-temp 2>/dev/null || true
 
+            # Configurações otimizadas para inicialização mais rápida
             docker run -d --name sonarqube-temp -p 9000:9000 \
-              -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true sonarqube:lts-community
+              -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true \
+              -e SONAR_JDBC_URL=jdbc:h2:mem:sonarqube \
+              -e SONAR_WEB_JAVAADDITIONALOPTS="-Xmx512m -Xms128m" \
+              -e SONAR_CE_JAVAADDITIONALOPTS="-Xmx512m -Xms128m" \
+              --memory=1g \
+              sonarqube:lts-community
 
             echo "Aguardando SonarQube iniciar..."
-            for i in {1..40}; do
-              if curl -s http://localhost:9000/api/system/status | grep -q '"status":"UP"'; then
+            for i in {1..60}; do
+              if curl -s http://localhost:9000/api/system/status 2>/dev/null | grep -q '"status":"UP"'; then
                 echo "✅ SonarQube está pronto!"
+                # Aguardar mais um pouco para garantir que está totalmente carregado
+                sleep 5
                 exit 0
               fi
-              echo "Esperando SonarQube... ($i/40)"
-              sleep 10
+              echo "Esperando SonarQube... ($i/60)"
+              sleep 5
             done
             echo "❌ Timeout esperando SonarQube"
+            # Logs para debug
+            docker logs sonarqube-temp --tail 50
             exit 1
           EOF
 
@@ -87,17 +97,21 @@ jobs:
 
       - name: Verificar Quality Gate
         run: |
-          for i in {1..5}; do
-            STATUS=$(curl -s -u ${{ secrets.SONAR_TOKEN }}: "http://${{ secrets.SERVER_HOST }}:9000/api/qualitygates/project_status?projectKey=gerenciador-tarefas" | jq -r '.projectStatus.status')
+          for i in {1..10}; do
+            STATUS=$(curl -s -u ${{ secrets.SONAR_TOKEN }}: "http://${{ secrets.SERVER_HOST }}:9000/api/qualitygates/project_status?projectKey=gerenciador-tarefas" 2>/dev/null | jq -r '.projectStatus.status' 2>/dev/null || echo "PENDING")
+            echo "Tentativa $i/10: Status atual = $STATUS"
+            
             if [ "$STATUS" == "OK" ]; then
               echo "✅ Quality Gate passou!"
               exit 0
             elif [ "$STATUS" == "ERROR" ]; then
               echo "❌ Quality Gate falhou!"
+              # Buscar detalhes do erro
+              curl -s -u ${{ secrets.SONAR_TOKEN }}: "http://${{ secrets.SERVER_HOST }}:9000/api/qualitygates/project_status?projectKey=gerenciador-tarefas" | jq '.'
               exit 1
             else
-              echo "Tentativa $i/5: aguardando análise..."
-              sleep 10
+              echo "Aguardando análise concluir..."
+              sleep 15
             fi
           done
           echo "❌ Timeout aguardando Quality Gate"
