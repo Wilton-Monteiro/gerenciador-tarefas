@@ -50,29 +50,35 @@ jobs:
             docker stop sonarqube-temp 2>/dev/null || true
             docker rm sonarqube-temp 2>/dev/null || true
 
-            # Configurações otimizadas para inicialização mais rápida
+            # Remover volumes antigos se existirem
+            docker volume rm sonarqube_data sonarqube_logs sonarqube_extensions 2>/dev/null || true
+
+            # Configurações otimizadas mas sem forçar H2 em memória
             docker run -d --name sonarqube-temp -p 9000:9000 \
               -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true \
-              -e SONAR_JDBC_URL=jdbc:h2:mem:sonarqube \
-              -e SONAR_WEB_JAVAADDITIONALOPTS="-Xmx512m -Xms128m" \
-              -e SONAR_CE_JAVAADDITIONALOPTS="-Xmx512m -Xms128m" \
-              --memory=1g \
+              -e SONAR_WEB_JAVAADDITIONALOPTS="-Xmx1024m -Xms512m" \
+              -e SONAR_CE_JAVAADDITIONALOPTS="-Xmx1024m -Xms512m" \
+              -v sonarqube_data:/opt/sonarqube/data \
+              -v sonarqube_logs:/opt/sonarqube/logs \
+              -v sonarqube_extensions:/opt/sonarqube/extensions \
+              --memory=2g \
               sonarqube:lts-community
 
             echo "Aguardando SonarQube iniciar..."
-            for i in {1..60}; do
+            for i in {1..90}; do
               if curl -s http://localhost:9000/api/system/status 2>/dev/null | grep -q '"status":"UP"'; then
                 echo "✅ SonarQube está pronto!"
                 # Aguardar mais um pouco para garantir que está totalmente carregado
-                sleep 5
+                sleep 10
                 exit 0
               fi
-              echo "Esperando SonarQube... ($i/60)"
-              sleep 5
+              echo "Esperando SonarQube... ($i/90) - Pode demorar na primeira vez..."
+              sleep 10
             done
             echo "❌ Timeout esperando SonarQube"
             # Logs para debug
-            docker logs sonarqube-temp --tail 50
+            echo "=== LOGS DO SONARQUBE ==="
+            docker logs sonarqube-temp --tail 100
             exit 1
           EOF
 
@@ -122,6 +128,8 @@ jobs:
           ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
             docker stop sonarqube-temp 2>/dev/null || true
             docker rm sonarqube-temp 2>/dev/null || true
+            # Limpar volumes temporários
+            docker volume rm sonarqube_data sonarqube_logs sonarqube_extensions 2>/dev/null || true
           EOF
 
       - name: Deploy no servidor remoto
