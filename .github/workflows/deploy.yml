@@ -44,33 +44,25 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Limpar memória e preparar ambiente
+      - name: Preparar ambiente
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-            echo "=== LIMPEZA COMPLETA DE MEMÓRIA ==="
+            echo "=== PREPARAÇÃO DO AMBIENTE ==="
             
-            # Parar TODOS os containers para liberar memória
-            docker stop $(docker ps -q) 2>/dev/null || true
-            docker rm $(docker ps -aq) 2>/dev/null || true
+            # Limpeza seletiva do Docker (apenas images não utilizadas)
+            docker image prune -f
+            docker builder prune -f
             
-            # Limpeza agressiva do Docker
-            docker system prune -af --volumes
-            docker builder prune -af
-            
-            # Limpar cache do sistema (sem sudo)
-            sync 2>/dev/null || true
-            
-            echo "=== MEMÓRIA APÓS LIMPEZA ==="
+            echo "=== STATUS INICIAL DA MEMÓRIA ==="
             free -h
             df -h | head -5
             
-            # Tentar configurações do sistema (com fallback)
+            # Configurações do sistema (com fallback)
             echo "Configurando parâmetros do sistema..."
             sudo sysctl -w vm.swappiness=60 2>/dev/null || echo "Aviso: Não foi possível ajustar swappiness"
             sudo sysctl -w vm.vfs_cache_pressure=50 2>/dev/null || echo "Aviso: Não foi possível ajustar cache pressure"
             sudo sysctl -w vm.max_map_count=262144 2>/dev/null || echo "Aviso: Não foi possível ajustar max_map_count"
             sudo sysctl -w fs.file-max=65536 2>/dev/null || echo "Aviso: Não foi possível ajustar file-max"
-            sudo sysctl -w vm.drop_caches=1 2>/dev/null || echo "Aviso: Não foi possível limpar cache"
           EOF
 
       - name: Iniciar SonarQube com configurações mínimas
@@ -266,22 +258,18 @@ jobs:
             echo "Removendo imagem SonarQube..."
             docker rmi sonarqube:9.9-community 2>/dev/null || echo "Imagem já removida"
             
-            # Limpeza adicional do Docker
-            echo "Limpeza final do Docker..."
+            # Limpeza seletiva do Docker (apenas não utilizados)
+            echo "Limpeza seletiva do Docker..."
             docker system prune -f 2>/dev/null || true
-            docker image prune -af 2>/dev/null || true
+            docker image prune -f 2>/dev/null || true
             
             # Limpar arquivo temporário de porta
             rm -f /tmp/sonar_port.env
             
-            # Tentar restaurar configurações de swap (com fallback)
+            # Restaurar configurações do sistema (com fallback)
             echo "Restaurando configurações do sistema..."
             sudo sysctl -w vm.swappiness=30 2>/dev/null || echo "Aviso: Não foi possível restaurar swappiness"
             sudo sysctl -w vm.vfs_cache_pressure=100 2>/dev/null || echo "Aviso: Não foi possível restaurar cache pressure"
-            sudo sysctl -w vm.drop_caches=1 2>/dev/null || echo "Aviso: Não foi possível limpar cache"
-            
-            # Limpar cache sem sudo
-            sync 2>/dev/null || true
             
             echo "=== MEMÓRIA E DISCO APÓS LIMPEZA ==="
             free -h
@@ -298,12 +286,14 @@ jobs:
           ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} 'bash -s' << 'EOF'
           echo "=== DEPLOY DA APLICAÇÃO ==="
           
-          # Parar aplicação atual
-          docker-compose -f /home/aluno/gerenciador-tarefas/docker-compose.yml down || true
+          # Parar aplicação atual se existir
+          if [ -f /home/aluno/gerenciador-tarefas/docker-compose.yml ]; then
+            docker-compose -f /home/aluno/gerenciador-tarefas/docker-compose.yml down || true
+          fi
           
-          # Limpeza de imagens antigas
-          docker rmi willmonteiro/gerenciador-tarefas:01 || true
-          docker rmi willmonteiro/gerenciador-tarefas:latest || true
+          # Limpeza seletiva de imagens antigas da aplicação
+          docker rmi willmonteiro/gerenciador-tarefas:01 2>/dev/null || true
+          docker rmi willmonteiro/gerenciador-tarefas:latest 2>/dev/null || true
 
           # Preparar diretório
           mkdir -p /home/aluno/gerenciador-tarefas
