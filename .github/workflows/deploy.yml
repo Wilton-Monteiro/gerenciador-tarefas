@@ -73,6 +73,7 @@ jobs:
       - name: Executar análise SonarQube
         run: |
           # Instalar scanner
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
           wget -O sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.zip
           unzip sonar-scanner.zip
           export PATH=$PATH:$(pwd)/sonar-scanner-4.8.0.2856-linux/bin
@@ -82,7 +83,7 @@ jobs:
             -Dsonar.projectKey=gerenciador-tarefas \
             -Dsonar.projectName="Gerenciador de Tarefas" \
             -Dsonar.sources=. \
-            -Dsonar.host.url=http://${{ secrets.SERVER_HOST }}:9000 \
+            -Dsonar.host.url=http://localhost:9000 \
             -Dsonar.login=${{ secrets.SONAR_TOKEN }} \
             -Dsonar.exclusions=**/node_modules/**,**/*.log,**/*.md,**/dist/**,**/build/** \
             -Dsonar.qualitygate.wait=true \
