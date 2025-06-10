@@ -57,20 +57,20 @@ jobs:
             docker system prune -af --volumes
             docker builder prune -af
             
-            # Limpar cache do sistema
-            sudo sync
-            sudo sysctl -w vm.drop_caches=3
+            # Limpar cache do sistema (sem sudo)
+            sync 2>/dev/null || true
             
             echo "=== MEMÓRIA APÓS LIMPEZA ==="
             free -h
+            df -h | head -5
             
-            # Configurar swap para ser mais agressivo (temporário)
-            sudo sysctl -w vm.swappiness=60
-            sudo sysctl -w vm.vfs_cache_pressure=50
-            
-            # Configurações obrigatórias do Elasticsearch
-            sudo sysctl -w vm.max_map_count=262144
-            sudo sysctl -w fs.file-max=65536
+            # Tentar configurações do sistema (com fallback)
+            echo "Configurando parâmetros do sistema..."
+            sudo sysctl -w vm.swappiness=60 2>/dev/null || echo "Aviso: Não foi possível ajustar swappiness"
+            sudo sysctl -w vm.vfs_cache_pressure=50 2>/dev/null || echo "Aviso: Não foi possível ajustar cache pressure"
+            sudo sysctl -w vm.max_map_count=262144 2>/dev/null || echo "Aviso: Não foi possível ajustar max_map_count"
+            sudo sysctl -w fs.file-max=65536 2>/dev/null || echo "Aviso: Não foi possível ajustar file-max"
+            sudo sysctl -w vm.drop_caches=1 2>/dev/null || echo "Aviso: Não foi possível limpar cache"
           EOF
 
       - name: Iniciar SonarQube com configurações mínimas
@@ -116,6 +116,8 @@ jobs:
               --ulimit nproc=2048:2048 \
               --cpus="1.5" \
               --security-opt seccomp=unconfined \
+              --tmpfs /tmp:noexec,nosuid,size=512m \
+              --tmpfs /var/tmp:noexec,nosuid,size=256m \
               sonarqube:9.9-community
 
             if [ $? -ne 0 ]; then
@@ -267,20 +269,26 @@ jobs:
             # Limpeza adicional do Docker
             echo "Limpeza final do Docker..."
             docker system prune -f 2>/dev/null || true
+            docker image prune -af 2>/dev/null || true
             
             # Limpar arquivo temporário de porta
             rm -f /tmp/sonar_port.env
             
-            # Restaurar configurações de swap
-            sudo sysctl -w vm.swappiness=30 2>/dev/null || true
-            sudo sysctl -w vm.vfs_cache_pressure=100 2>/dev/null || true
+            # Tentar restaurar configurações de swap (com fallback)
+            echo "Restaurando configurações do sistema..."
+            sudo sysctl -w vm.swappiness=30 2>/dev/null || echo "Aviso: Não foi possível restaurar swappiness"
+            sudo sysctl -w vm.vfs_cache_pressure=100 2>/dev/null || echo "Aviso: Não foi possível restaurar cache pressure"
+            sudo sysctl -w vm.drop_caches=1 2>/dev/null || echo "Aviso: Não foi possível limpar cache"
             
-            # Limpar cache do sistema novamente
-            sudo sync && sudo sysctl -w vm.drop_caches=3 2>/dev/null || true
+            # Limpar cache sem sudo
+            sync 2>/dev/null || true
             
-            echo "=== MEMÓRIA APÓS LIMPEZA ==="
+            echo "=== MEMÓRIA E DISCO APÓS LIMPEZA ==="
             free -h
-            df -h | grep -E '^/dev/'
+            df -h | head -5
+            echo "=== CONTAINERS E IMAGENS RESTANTES ==="
+            docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Size}}"
+            docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}"
             
             echo "✅ Limpeza do SonarQube concluída!"
           EOF
