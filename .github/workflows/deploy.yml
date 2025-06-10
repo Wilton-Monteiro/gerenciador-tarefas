@@ -1,4 +1,4 @@
-name: Deploy Automatizado com SonarQube (Otimizado para Baixa Memória)
+name: Deploy Automatizado com SonarQube
 
 on:
   push:
@@ -44,39 +44,11 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Limpar memória e preparar ambiente
-        run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-            echo "=== LIMPEZA COMPLETA DE MEMÓRIA ==="
-            
-            # Parar TODOS os containers para liberar memória
-            docker stop $(docker ps -q) 2>/dev/null || true
-            docker rm $(docker ps -aq) 2>/dev/null || true
-            
-            # Limpeza agressiva do Docker
-            docker system prune -af --volumes
-            docker builder prune -af
-            
-            # Limpar cache do sistema
-            sudo sync
-            sudo sysctl -w vm.drop_caches=3
-            
-            echo "=== MEMÓRIA APÓS LIMPEZA ==="
-            free -h
-            
-            # Configurar swap para ser mais agressivo (temporário)
-            sudo sysctl -w vm.swappiness=60
-            sudo sysctl -w vm.vfs_cache_pressure=50
-            
-            # Configurações obrigatórias do Elasticsearch
-            sudo sysctl -w vm.max_map_count=262144
-            sudo sysctl -w fs.file-max=65536
-          EOF
+      # === Parte de limpeza de memória REMOVIDA ===
 
       - name: Iniciar SonarQube com configurações mínimas
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-            # Função para encontrar porta livre
             find_free_port() {
               for port in 9000 9001 9002 9003 9004 9005; do
                 if ! netstat -tulpn | grep -q ":$port "; then
@@ -91,18 +63,16 @@ jobs:
             echo "SONAR_PORT=$SONAR_PORT" > /tmp/sonar_port.env
             echo "Usando porta: $SONAR_PORT"
 
-            # Criar volumes
             docker volume create sonarqube_temp_data
             docker volume create sonarqube_temp_logs  
             docker volume create sonarqube_temp_extensions
 
-            echo "=== INICIANDO SONARQUBE COM CONFIGURAÇÕES MÍNIMAS ==="
             docker run -d --name sonarqube-temp \
               -p $SONAR_PORT:9000 \
               -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true \
-              -e SONAR_SEARCH_JAVAADDITIONALOPTS="-Xms256m -Xmx512m -XX:MaxDirectMemorySize=128m" \
-              -e SONAR_WEB_JAVAADDITIONALOPTS="-Xms512m -Xmx1024m -XX:+UseG1GC -XX:+UseStringDeduplication" \
-              -e SONAR_CE_JAVAADDITIONALOPTS="-Xms256m -Xmx512m -XX:+UseG1GC" \
+              -e SONAR_SEARCH_JAVAADDITIONALOPTS="-Xms256m -Xmx512m" \
+              -e SONAR_WEB_JAVAADDITIONALOPTS="-Xms512m -Xmx1024m" \
+              -e SONAR_CE_JAVAADDITIONALOPTS="-Xms256m -Xmx512m" \
               -e ES_JAVA_OPTS="-Xms256m -Xmx512m" \
               -e SONAR_LOG_LEVEL=WARN \
               -v sonarqube_temp_data:/opt/sonarqube/data \
@@ -110,60 +80,10 @@ jobs:
               -v sonarqube_temp_extensions:/opt/sonarqube/extensions \
               --memory=2g \
               --memory-swap=3g \
-              --memory-swappiness=10 \
-              --oom-kill-disable=false \
-              --ulimit nofile=32768:32768 \
-              --ulimit nproc=2048:2048 \
               --cpus="1.5" \
-              --security-opt seccomp=unconfined \
               sonarqube:9.9-community
 
-            if [ $? -ne 0 ]; then
-              echo "❌ Falha ao iniciar container SonarQube"
-              exit 1
-            fi
-
-            echo "Container iniciado, monitorando recursos..."
             sleep 10
-            
-            # Monitorar memória durante inicialização
-            for i in {1..30}; do
-              echo "=== STATUS RECURSOS ($i/30) ==="
-              free -h | head -2
-              
-              # Verificar logs de erro crítico
-              LOGS=$(docker logs sonarqube-temp --tail 10 2>&1)
-              if echo "$LOGS" | grep -q "OutOfMemoryError\|Cannot allocate memory"; then
-                echo "❌ Erro de memória detectado!"
-                docker logs sonarqube-temp --tail 30
-                exit 1
-              fi
-              
-              # Verificar se está operacional
-              if echo "$LOGS" | grep -q "SonarQube is operational"; then
-                echo "✅ SonarQube operacional!"
-                break
-              fi
-              
-              sleep 10
-            done
-
-            # Aguardar API responder
-            echo "=== AGUARDANDO API ==="
-            for i in {1..60}; do
-              STATUS_RESPONSE=$(timeout 5 curl -s "http://localhost:$SONAR_PORT/api/system/status" 2>/dev/null || echo "")
-              if echo "$STATUS_RESPONSE" | grep -q '"status":"UP"'; then
-                echo "✅ SonarQube API respondendo!"
-                sleep 20  # Estabilização
-                break
-              fi
-              
-              if [ $((i % 10)) -eq 0 ]; then
-                echo "Aguardando API... ($i/60)"
-                free -h | head -2
-              fi
-              sleep 5
-            done
           EOF
 
       - name: Obter porta do SonarQube
@@ -175,6 +95,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '18'
+
       - run: npm install -g sonarqube-scanner
 
       - name: Executar análise SonarQube otimizada
@@ -182,196 +103,30 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
           SONAR_HOST_URL="http://${{ secrets.SERVER_HOST }}:$SONAR_PORT"
-          echo "=== ANÁLISE SONARQUBE OTIMIZADA ==="
-          
-          # Verificação final antes da análise
-          sleep 30
-          
           timeout 900 sonar-scanner \
             -Dsonar.projectKey=gerenciador-tarefas \
             -Dsonar.projectName="Gerenciador de Tarefas" \
-            -Dsonar.projectVersion=1.0 \
             -Dsonar.sources=. \
             -Dsonar.host.url=$SONAR_HOST_URL \
             -Dsonar.login=$SONAR_TOKEN \
-            -Dsonar.exclusions=**/node_modules/**,**/*.log,**/*.md,**/*.txt,**/*.json,**/.git/**,**/dist/**,**/build/**,**/coverage/**,**/*.min.js,**/vendor/**,**/*.bundle.js \
-            -Dsonar.inclusions=**/*.js,**/*.html,**/*.css \
+            -Dsonar.exclusions=**/node_modules/**,**/*.log,**/*.md,**/*.txt \
             -Dsonar.sourceEncoding=UTF-8 \
-            -Dsonar.scm.provider=git \
-            -Dsonar.qualitygate.wait=false \
-            -Dsonar.ws.timeout=120 \
-            -Dsonar.scanner.maxHeap=512m \
-            -Dsonar.verbose=false \
-            -Dsonar.log.level=WARN \
-            -Dsonar.analysis.mode=preview \
-            -Dsonar.cpd.exclusions=**/*.min.js,**/vendor/** \
-            -Dsonar.coverage.exclusions=**/*.test.js,**/*.spec.js
+            -Dsonar.scanner.maxHeap=512m
 
       - name: Verificar Quality Gate (flexível)
         run: |
-          echo "=== VERIFICAÇÃO QUALITY GATE ==="
-          sleep 60
-          
           SONAR_HOST_URL="http://${{ secrets.SERVER_HOST }}:$SONAR_PORT"
-          
           for i in {1..10}; do
             RESPONSE=$(timeout 10 curl -s -u ${{ secrets.SONAR_TOKEN }}: \
-              "$SONAR_HOST_URL/api/qualitygates/project_status?projectKey=gerenciador-tarefas" \
-              2>/dev/null || echo '{"projectStatus":{"status":"NONE"}}')
-            
-            STATUS=$(echo "$RESPONSE" | jq -r '.projectStatus.status' 2>/dev/null || echo "NONE")
-            
-            case "$STATUS" in
-              "OK")
-                echo "✅ Quality Gate passou!"
-                exit 0
-                ;;
-              "ERROR")
-                echo "⚠️  Quality Gate falhou, mas continuando (projeto em desenvolvimento)..."
-                exit 0
-                ;;
-              *)
-                echo "ℹ️  Status: $STATUS - continuando deploy..."
-                exit 0
-                ;;
-            esac
-            
-            sleep 15
-          done
-          
-          echo "✅ Análise concluída - continuando deploy..."
-
-      - name: Limpar SonarQube e liberar memória
-        if: always()
-        run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-            echo "=== LIMPEZA E LIBERAÇÃO DE MEMÓRIA ==="
-            docker stop sonarqube-temp 2>/dev/null || true
-            docker rm sonarqube-temp 2>/dev/null || true
-            docker volume rm sonarqube_temp_data sonarqube_temp_logs sonarqube_temp_extensions 2>/dev/null || true
-            
-            # Limpeza agressiva
-            docker system prune -af
-            sudo sync
-            sudo sysctl -w vm.drop_caches=3
-            
-            rm -f /tmp/sonar_port.env
-            echo "Memória liberada:"
-            free -h
-          EOF
-
-      - name: Deploy da aplicação
-        run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} 'bash -s' << 'EOF'
-          echo "=== DEPLOY DA APLICAÇÃO ==="
-          
-          # Parar aplicação atual
-          docker-compose -f /home/aluno/gerenciador-tarefas/docker-compose.yml down || true
-          
-          # Limpeza de imagens antigas
-          docker rmi willmonteiro/gerenciador-tarefas:01 || true
-          docker rmi willmonteiro/gerenciador-tarefas:latest || true
-
-          # Preparar diretório
-          mkdir -p /home/aluno/gerenciador-tarefas
-          
-          # Baixar nova imagem
-          docker pull willmonteiro/gerenciador-tarefas:01
-
-          # Criar docker-compose.yml otimizado
-          cat > /home/aluno/gerenciador-tarefas/docker-compose.yml << 'DOCKERCOMPOSE'
-          version: '3.8'
-
-          services:
-            app:
-              image: willmonteiro/gerenciador-tarefas:01
-              ports:
-                - "3001:3000"
-              depends_on:
-                db:
-                  condition: service_healthy
-              environment:
-                - DB_HOST=db
-                - DB_PORT=5432
-                - DB_NAME=tarefas_db
-                - DB_USER=postgres
-                - DB_PASSWORD=postgres123
-                - NODE_ENV=production
-              networks:
-                - app-network
-              restart: unless-stopped
-              deploy:
-                resources:
-                  limits:
-                    memory: 512M
-                  reservations:
-                    memory: 256M
-              healthcheck:
-                test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
-                interval: 30s
-                timeout: 10s
-                retries: 3
-
-            db:
-              image: postgres:15-alpine
-              environment:
-                - POSTGRES_DB=tarefas_db
-                - POSTGRES_USER=postgres
-                - POSTGRES_PASSWORD=postgres123
-                - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
-              ports:
-                - "5435:5432"
-              volumes:
-                - postgres_data:/var/lib/postgresql/data
-              networks:
-                - app-network
-              restart: unless-stopped
-              deploy:
-                resources:
-                  limits:
-                    memory: 256M
-                  reservations:
-                    memory: 128M
-              healthcheck:
-                test: ["CMD-SHELL", "pg_isready -U postgres"]
-                interval: 10s
-                timeout: 5s
-                retries: 5
-
-          volumes:
-            postgres_data:
-
-          networks:
-            app-network:
-              driver: bridge
-          DOCKERCOMPOSE
-
-          # Iniciar aplicação
-          cd /home/aluno/gerenciador-tarefas
-          docker-compose up -d
-          
-          echo "✅ Deploy concluído!"
-          docker-compose ps
-          EOF
-
-      - name: Verificar aplicação online
-        run: |
-          echo "=== VERIFICAÇÃO FINAL ==="
-          sleep 45
-          
-          for i in {1..10}; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-              --connect-timeout 10 --max-time 15 \
-              "http://${{ secrets.SERVER_HOST }}:3001" || echo "000")
-            
-            if [[ "$STATUS" =~ ^(200|302|301)$ ]]; then
-              echo "✅ Aplicação online!"
-              echo "🌐 URL: http://${{ secrets.SERVER_HOST }}:3001"
+              "$SONAR_HOST_URL/api/qualitygates/project_status?projectKey=gerenciador-tarefas")
+            STATUS=$(echo "$RESPONSE" | jq -r '.projectStatus.status')
+            if [ "$STATUS" == "OK" ]; then
+              echo "✅ Quality Gate passou!"
+              exit 0
+            elif [ "$STATUS" == "ERROR" ]; then
+              echo "⚠️ Quality Gate falhou, mas continuando..."
               exit 0
             fi
-            
-            echo "Tentativa $i/10 - Status: $STATUS"
-            sleep 20
+            sleep 15
           done
-          
-          echo "⚠️  Verificação final - veja os logs do container se necessário"
+          echo "✅ Análise concluída - continuando deploy..."
