@@ -6,7 +6,7 @@ on:
   
 jobs:
   build-analyze-deploy:
-    runs-on: ubuntu-latestname: Deploy Automatizado com SonarQube
+    runs-on: ubuntu-latest
 
 on:
   push:
