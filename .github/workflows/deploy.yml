@@ -3,7 +3,7 @@ name: Deploy Automatizado com SonarQube
 on:
   push:
     branches: [ main ]
-  
+
 jobs:
   build-analyze-deploy:
     runs-on: ubuntu-latest
@@ -39,77 +39,61 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Iniciar SonarQube e executar análise
+      - name: Iniciar SonarQube via Docker e executar análise
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-            # Configurar sistema
             sudo sysctl -w vm.max_map_count=262144
             sudo sysctl -w fs.file-max=65536
-            
-            
-            # Iniciar SonarQube
+
             docker run -d --name sonarqube-temp \
               -p 9000:9000 \
               -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true \
               --memory=3g \
               --ulimit nofile=65536:65536 \
               sonarqube:9.9-community
-            
-            # Aguardar inicialização
+
             echo "Aguardando SonarQube inicializar..."
             for i in {1..60}; do
               if curl -s http://localhost:9000/api/system/status | grep -q '"status":"UP"'; then
-                echo "✅ SonarQube iniciado com sucesso!"
+                echo "✅ SonarQube iniciado!"
                 break
               fi
               if [ $i -eq 60 ]; then
-                echo "❌ Timeout aguardando SonarQube"
+                echo "❌ Timeout ao iniciar SonarQube"
                 docker logs sonarqube-temp --tail 20
                 exit 1
               fi
               sleep 10
             done
-          EOF
 
-      - name: Executar análise SonarQube
-        run: |
-          # Instalar scanner
-          wget -O sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.zip
-          unzip sonar-scanner.zip
-          export PATH=$PATH:$(pwd)/sonar-scanner-4.8.0.2856-linux/bin
-          
-          # Executar análise
-          sonar-scanner \
-            -Dsonar.projectKey=gerenciador-tarefas \
-            -Dsonar.projectName="Gerenciador de Tarefas" \
-            -Dsonar.sources=. \
-            -Dsonar.host.url=http://${{ secrets.SERVER_HOST }}:9000 \
-            -Dsonar.login=${{ secrets.SONAR_TOKEN }} \
-            -Dsonar.exclusions=**/node_modules/**,**/*.log,**/*.md,**/dist/**,**/build/** \
-            -Dsonar.qualitygate.wait=true \
-            -Dsonar.qualitygate.timeout=300
+            echo "Executando análise SonarQube..."
+            docker run --rm -v "$(pwd)":/usr/src \
+              -v /var/run/docker.sock:/var/run/docker.sock \
+              sonarsource/sonar-scanner-cli \
+              -Dsonar.projectKey=gerenciador-tarefas \
+              -Dsonar.projectName="Gerenciador de Tarefas" \
+              -Dsonar.sources=. \
+              -Dsonar.host.url=http://localhost:9000 \
+              -Dsonar.login=${{ secrets.SONAR_TOKEN }} \
+              -Dsonar.exclusions=**/node_modules/**,**/*.log,**/*.md,**/dist/**,**/build/** \
+              -Dsonar.qualitygate.wait=true \
+              -Dsonar.qualitygate.timeout=300
 
-      - name: Limpar SonarQube
-        if: always()
-        run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-            docker stop sonarqube-temp 2>/dev/null || true
-            docker rm sonarqube-temp 2>/dev/null || true
+            echo "Análise concluída. Limpando container do SonarQube..."
+            docker stop sonarqube-temp
+            docker rm sonarqube-temp
           EOF
 
       - name: Deploy da aplicação
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-            # Parar aplicação atual
             docker stop gerenciador-tarefas 2>/dev/null || true
             docker rm gerenciador-tarefas 2>/dev/null || true
             docker stop postgres-db 2>/dev/null || true
             docker rm postgres-db 2>/dev/null || true
-            
-            # Criar rede
+
             docker network create app-network 2>/dev/null || true
-            
-            # Iniciar banco
+
             docker run -d --name postgres-db \
               --network app-network \
               -e POSTGRES_DB=tarefas_db \
@@ -117,11 +101,9 @@ jobs:
               -e POSTGRES_PASSWORD=postgres123 \
               -v postgres_data:/var/lib/postgresql/data \
               postgres:15-alpine
-            
-            # Aguardar banco inicializar
+
             sleep 15
-            
-            # Iniciar aplicação
+
             docker run -d --name gerenciador-tarefas \
               --network app-network \
               -p 3001:3000 \
@@ -138,7 +120,6 @@ jobs:
         run: |
           echo "Aguardando aplicação inicializar..."
           sleep 30
-          
           for i in {1..10}; do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.SERVER_HOST }}:3001 || echo "000")
             if [ "$STATUS" = "200" ] || [ "$STATUS" = "302" ]; then
@@ -148,6 +129,5 @@ jobs:
             echo "Tentativa $i/10... Status: $STATUS"
             sleep 15
           done
-          
           echo "❌ Aplicação não respondeu"
           exit 1
