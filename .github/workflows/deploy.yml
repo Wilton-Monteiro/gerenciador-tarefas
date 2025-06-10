@@ -7,7 +7,6 @@ on:
 jobs:
   build-analyze-deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
 
     steps:
       - name: Checkout do código
@@ -40,250 +39,89 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Preparar e iniciar SonarQube
+      - name: Iniciar SonarQube e executar análise
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-            # Limpar containers e volumes anteriores
-            docker stop sonarqube-temp 2>/dev/null || true
-            docker rm sonarqube-temp 2>/dev/null || true
-            docker volume rm sonar-temp-vol 2>/dev/null || true
-            
-            # Configurar sistema para SonarQube e ElasticSearch
+            # Configurar sistema
             sudo sysctl -w vm.max_map_count=262144
             sudo sysctl -w fs.file-max=65536
-            sudo sysctl -w vm.swappiness=1
-            echo "vm.max_map_count=262144" | sudo tee -a /etc/sysctl.conf
             
-            # Criar volume Docker para dados persistentes
-            docker volume create sonar-temp-vol
             
-            # Iniciar SonarQube com configurações mais conservadoras
+            # Iniciar SonarQube
             docker run -d --name sonarqube-temp \
               -p 9000:9000 \
               -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true \
-              -e SONAR_JDBC_URL="jdbc:h2:file:/opt/sonarqube/data/sonar;NON_KEYWORDS=VALUE" \
-              -e SONAR_WEB_JAVAADDITIONALOPTS="-Xmx768m -Xms256m -XX:+UseG1GC" \
-              -e SONAR_CE_JAVAADDITIONALOPTS="-Xmx768m -Xms256m -XX:+UseG1GC" \
-              -e SONAR_SEARCH_JAVAADDITIONALOPTS="-Xmx512m -Xms256m" \
               --memory=3g \
-              --memory-swap=3g \
               --ulimit nofile=65536:65536 \
-              --ulimit memlock=-1:-1 \
-              -v sonar-temp-vol:/opt/sonarqube/data \
-              --security-opt seccomp=unconfined \
               sonarqube:9.9-community
             
-            echo "🚀 SonarQube iniciado, aguardando inicialização completa..."
-            
-            # Aguardar inicialização com verificação de saúde mais detalhada
+            # Aguardar inicialização
+            echo "Aguardando SonarQube inicializar..."
             for i in {1..60}; do
-              echo "⏳ Verificação $i/60..."
-              
-              # Verificar se container ainda está rodando
-              if ! docker ps --format "table {{.Names}}" | grep -q "sonarqube-temp"; then
-                echo "❌ Container SonarQube parou de executar!"
-                docker logs sonarqube-temp --tail 30
-                exit 1
-              fi
-              
-              # Verificar logs para mensagens de sucesso ou erro
-              LOGS=$(docker logs sonarqube-temp 2>&1 | tail -20)
-              
-              if echo "$LOGS" | grep -q "SonarQube is operational"; then
-                echo "✅ SonarQube está operacional!"
+              if curl -s http://localhost:9000/api/system/status | grep -q '"status":"UP"'; then
+                echo "✅ SonarQube iniciado com sucesso!"
                 break
               fi
-              
-              if echo "$LOGS" | grep -qE "(OutOfMemoryError|ERROR.*database|FATAL|Exception in thread)"; then
-                echo "❌ Erro crítico detectado nos logs:"
-                echo "$LOGS"
-                exit 1
-              fi
-              
               if [ $i -eq 60 ]; then
-                echo "❌ Timeout aguardando SonarQube ficar operacional"
-                echo "📋 Últimos logs:"
-                docker logs sonarqube-temp --tail 30
-                exit 1
-              fi
-              
-              sleep 10
-            done
-            
-            # Verificar API específicamente
-            echo "🔍 Verificando API do SonarQube..."
-            for i in {1..20}; do
-              HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:9000/api/system/status || echo "000")
-              if [ "$HTTP_CODE" = "200" ]; then
-                API_RESPONSE=$(curl -s http://localhost:9000/api/system/status)
-                if echo "$API_RESPONSE" | grep -q '"status":"UP"'; then
-                  echo "✅ API do SonarQube confirmada como UP!"
-                  break
-                fi
-              fi
-              
-              if [ $i -eq 20 ]; then
-                echo "❌ API não respondeu adequadamente. HTTP Code: $HTTP_CODE"
-                curl -v http://localhost:9000/api/system/status || true
+                echo "❌ Timeout aguardando SonarQube"
                 docker logs sonarqube-temp --tail 20
                 exit 1
               fi
-              
-              echo "⏳ API ainda não está pronta... (HTTP: $HTTP_CODE)"
-              sleep 15
+              sleep 10
             done
           EOF
 
-      - name: Configurar SonarQube e executar análise
+      - name: Executar análise SonarQube
         run: |
-          # Criar arquivo temporário com o código fonte
-          tar -czf source-code.tar.gz --exclude='.git' --exclude='node_modules' --exclude='*.log' .
+          # Instalar scanner
+          wget -O sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.zip
+          unzip sonar-scanner.zip
+          export PATH=$PATH:$(pwd)/sonar-scanner-4.8.0.2856-linux/bin
           
-          # Enviar código e executar análise no servidor
-          scp -o StrictHostKeyChecking=no source-code.tar.gz ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:~/
-          
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-            # Aguardar estabilização do SonarQube
-            echo "⏳ Aguardando SonarQube estabilizar..."
-            sleep 60
-            
-            # Verificar conectividade com SonarQube
-            echo "🔍 Verificando conectividade com SonarQube..."
-            for i in {1..5}; do
-              if curl -s -f "http://localhost:9000/api/system/status" | grep -q '"status":"UP"'; then
-                echo "✅ SonarQube está acessível e UP!"
-                break
-              fi
-              if [ $i -eq 5 ]; then
-                echo "❌ SonarQube não está acessível"
-                curl -v "http://localhost:9000/api/system/status" || true
-                exit 1
-              fi
-              echo "⏳ Tentativa $i/5... aguardando..."
-              sleep 15
-            done
-            
-            # Baixar e configurar SonarScanner no servidor
-            echo "📥 Baixando SonarScanner no servidor..."
-            cd ~
-            rm -rf sonar-scanner-* source-analysis 2>/dev/null || true
-            wget -q -O sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.zip
-            unzip -q sonar-scanner.zip
-            export PATH=$PATH:$(pwd)/sonar-scanner-4.8.0.2856-linux/bin
-            
-            # Extrair código fonte
-            mkdir -p source-analysis
-            cd source-analysis
-            tar -xzf ~/source-code.tar.gz
-            
-            # Criar arquivo de configuração
-            cat > sonar-project.properties << 'CONFIG'
-          sonar.projectKey=gerenciador-tarefas
-          sonar.projectName=Gerenciador de Tarefas
-          sonar.projectVersion=1.0
-          sonar.sources=.
-          sonar.sourceEncoding=UTF-8
-          sonar.exclusions=**/node_modules/**,**/*.log,**/*.md,**/dist/**,**/build/**,**/.git/**,**/coverage/**,**/*.zip,**/sonar-scanner-*/**,**/.github/**
-          sonar.host.url=http://localhost:9000
-          sonar.login=admin
-          sonar.password=admin
-          CONFIG
-            
-            echo "📋 Configuração do projeto:"
-            cat sonar-project.properties
-            
-            echo "🔍 Arquivos que serão analisados:"
-            find . -type f \( -name "*.js" -o -name "*.ts" -o -name "*.jsx" -o -name "*.tsx" -o -name "*.java" -o -name "*.py" \) | head -20
-            
-            echo "📊 Iniciando análise do SonarQube..."
-            
-            # Executar análise local
-            sonar-scanner \
-              -Dsonar.verbose=true \
-              -Dsonar.log.level=INFO || {
-              
-              echo "❌ Falha na análise do SonarQube"
-              echo "📋 Verificando status do SonarQube..."
-              curl -v "http://localhost:9000/api/system/status" || true
-              
-              echo "📋 Verificando logs do container SonarQube:"
-              docker logs sonarqube-temp --tail 30 || true
-              
-              exit 1
-            }
-            
-            echo "✅ Análise do SonarQube concluída com sucesso!"
-            
-            # Limpar arquivos temporários
-            cd ~
-            rm -f source-code.tar.gz
-            rm -rf source-analysis sonar-scanner-*
-          EOF
-
-      - name: Verificar Quality Gate (opcional)
-        continue-on-error: true
-        run: |
-          echo "🔍 Verificando Quality Gate..."
-          curl -u admin:admin \
-            "http://${{ secrets.SERVER_HOST }}:9000/api/qualitygates/project_status?projectKey=gerenciador-tarefas" \
-            | jq '.projectStatus.status' || echo "Quality Gate não verificado"
+          # Executar análise
+          sonar-scanner \
+            -Dsonar.projectKey=gerenciador-tarefas \
+            -Dsonar.projectName="Gerenciador de Tarefas" \
+            -Dsonar.sources=. \
+            -Dsonar.host.url=http://${{ secrets.SERVER_HOST }}:9000 \
+            -Dsonar.login=${{ secrets.SONAR_TOKEN }} \
+            -Dsonar.exclusions=**/node_modules/**,**/*.log,**/*.md,**/dist/**,**/build/** \
+            -Dsonar.qualitygate.wait=true \
+            -Dsonar.qualitygate.timeout=300
 
       - name: Limpar SonarQube
         if: always()
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-            echo "🧹 Limpando recursos do SonarQube..."
             docker stop sonarqube-temp 2>/dev/null || true
             docker rm sonarqube-temp 2>/dev/null || true
-            docker volume rm sonar-temp-vol 2>/dev/null || true
-            echo "✅ Limpeza concluída"
           EOF
 
       - name: Deploy da aplicação
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-            echo "🚀 Iniciando deploy da aplicação..."
-            
             # Parar aplicação atual
             docker stop gerenciador-tarefas 2>/dev/null || true
             docker rm gerenciador-tarefas 2>/dev/null || true
             docker stop postgres-db 2>/dev/null || true
             docker rm postgres-db 2>/dev/null || true
             
-            # Criar rede se não existir
-            docker network create app-network 2>/dev/null || echo "Rede já existe"
+            # Criar rede
+            docker network create app-network 2>/dev/null || true
             
-            # Iniciar banco PostgreSQL
-            echo "📂 Iniciando banco de dados..."
+            # Iniciar banco
             docker run -d --name postgres-db \
               --network app-network \
               -e POSTGRES_DB=tarefas_db \
               -e POSTGRES_USER=postgres \
               -e POSTGRES_PASSWORD=postgres123 \
               -v postgres_data:/var/lib/postgresql/data \
-              --restart unless-stopped \
               postgres:15-alpine
             
             # Aguardar banco inicializar
-            echo "⏳ Aguardando banco inicializar..."
-            sleep 20
-            
-            # Verificar se banco está pronto
-            for i in {1..10}; do
-              if docker exec postgres-db pg_isready -U postgres; then
-                echo "✅ Banco PostgreSQL está pronto!"
-                break
-              fi
-              if [ $i -eq 10 ]; then
-                echo "❌ Banco não inicializou corretamente"
-                docker logs postgres-db --tail 10
-                exit 1
-              fi
-              sleep 3
-            done
+            sleep 15
             
             # Iniciar aplicação
-            echo "🌐 Iniciando aplicação..."
             docker run -d --name gerenciador-tarefas \
               --network app-network \
               -p 3001:3000 \
@@ -293,44 +131,23 @@ jobs:
               -e DB_USER=postgres \
               -e DB_PASSWORD=postgres123 \
               -e NODE_ENV=production \
-              --restart unless-stopped \
               willmonteiro/gerenciador-tarefas:01
-            
-            echo "✅ Deploy concluído!"
           EOF
 
-      - name: Verificar saúde da aplicação
+      - name: Verificar aplicação
         run: |
-          echo "🔍 Verificando saúde da aplicação..."
-          sleep 45
+          echo "Aguardando aplicação inicializar..."
+          sleep 30
           
-          # Verificar se containers estão rodando
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-            echo "📊 Status dos containers:"
-            docker ps --filter "name=gerenciador-tarefas" --filter "name=postgres-db"
-            
-            echo "📋 Logs da aplicação (últimas 10 linhas):"
-            docker logs gerenciador-tarefas --tail 10
-          EOF
-          
-          # Testar conectividade HTTP
-          for i in {1..15}; do
+          for i in {1..10}; do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.SERVER_HOST }}:3001 || echo "000")
-            if [ "$STATUS" = "200" ] || [ "$STATUS" = "302" ] || [ "$STATUS" = "301" ]; then
-              echo "✅ Aplicação está online em http://${{ secrets.SERVER_HOST }}:3001"
-              echo "📊 Status HTTP: $STATUS"
+            if [ "$STATUS" = "200" ] || [ "$STATUS" = "302" ]; then
+              echo "✅ Aplicação online em http://${{ secrets.SERVER_HOST }}:3001"
               exit 0
             fi
-            echo "⏳ Tentativa $i/15... Status HTTP: $STATUS"
-            sleep 10
+            echo "Tentativa $i/10... Status: $STATUS"
+            sleep 15
           done
           
-          echo "❌ Aplicação não está respondendo corretamente"
-          echo "🔍 Verificando logs para diagnóstico..."
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-            echo "=== LOGS DA APLICAÇÃO ==="
-            docker logs gerenciador-tarefas --tail 20
-            echo "=== LOGS DO BANCO ==="
-            docker logs postgres-db --tail 10
-          EOF
+          echo "❌ Aplicação não respondeu"
           exit 1
