@@ -73,26 +73,35 @@ jobs:
       
 
 
-      - name: Executar análise SonarQube sem sudo
+      - name: Executar análise SonarQube (sem sudo)
         run: |
          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-         mkdir -p \$HOME/sonar
-         cd \$HOME/sonar
+          # Criar diretório local
+         mkdir -p \$HOME/sonar && cd \$HOME/sonar
 
+         # Baixar unzip portátil
+         mkdir -p \$HOME/tools
+         cd \$HOME/tools
+         wget https://github.com/kuba--/zip/releases/download/v3.0/unzip-6.0-amd64 -O unzip
+         chmod +x unzip
+         export PATH="\$HOME/tools:\$PATH"
+
+         # Voltar ao diretório do scanner
+         cd \$HOME/sonar
          wget -O sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.zip
-         unzip -o sonar-scanner.zip
+
+         \$HOME/tools/unzip -o sonar-scanner.zip
 
          ./sonar-scanner-4.8.0.2856-linux/bin/sonar-scanner \
-          -Dsonar.projectKey=gerenciador-tarefas \
-          -Dsonar.projectName="Gerenciador de Tarefas" \
-          -Dsonar.sources=. \
-          -Dsonar.host.url=http://localhost:9000 \
-          -Dsonar.login=${{ secrets.SONAR_TOKEN }} \
-          -Dsonar.exclusions=**/node_modules/**,**/*.log,**/*.md,**/dist/**,**/build/** \
-          -Dsonar.qualitygate.wait=true \
-          -Dsonar.qualitygate.timeout=300
+         -Dsonar.projectKey=gerenciador-tarefas \
+         -Dsonar.projectName="Gerenciador de Tarefas" \
+         -Dsonar.sources=. \
+         -Dsonar.host.url=http://localhost:9000 \
+         -Dsonar.login=${{ secrets.SONAR_TOKEN }} \
+         -Dsonar.exclusions=**/node_modules/**,**/*.log,**/*.md,**/dist/**,**/build/** \
+         -Dsonar.qualitygate.wait=true \
+         -Dsonar.qualitygate.timeout=300
          EOF
-
 
 
       - name: Limpar SonarQube
