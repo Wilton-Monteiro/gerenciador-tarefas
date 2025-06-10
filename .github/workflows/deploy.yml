@@ -1,132 +1,86 @@
-name: Deploy Automatizado com SonarQube
+name: CI com SonarQube Temporário
 
 on:
   push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+    branches:
+      - main
 
 jobs:
-  build-analyze-deploy:
+  build:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout do código
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
+
+      - name: Instalar Java
+        uses: actions/setup-java@v3
         with:
-          fetch-depth: 0
+          distribution: 'temurin'
+          java-version: '17'
 
-      - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login no Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_HUB_USERNAME }}
-          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
-
-      - name: Build e push da imagem Docker
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          tags: |
-            willmonteiro/gerenciador-tarefas:01
-            willmonteiro/gerenciador-tarefas:latest
-            willmonteiro/gerenciador-tarefas:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Setup da chave SSH
+      - name: Copiar código para o servidor
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+          scp -o StrictHostKeyChecking=no -r . ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/app
 
-      # === Parte de limpeza de memória REMOVIDA ===
-
-      - name: Iniciar SonarQube com configurações mínimas
+      - name: Subir SonarQube temporário no servidor
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-            find_free_port() {
-              for port in 9000 9001 9002 9003 9004 9005; do
-                if ! netstat -tulpn | grep -q ":$port "; then
-                  echo $port
-                  return
-                fi
-              done
-              echo "9000"
-            }
-
-            SONAR_PORT=$(find_free_port)
-            echo "SONAR_PORT=$SONAR_PORT" > /tmp/sonar_port.env
-            echo "Usando porta: $SONAR_PORT"
-
-            docker volume create sonarqube_temp_data
-            docker volume create sonarqube_temp_logs  
-            docker volume create sonarqube_temp_extensions
-
             docker run -d --name sonarqube-temp \
-              -p $SONAR_PORT:9000 \
               -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true \
-              -e SONAR_SEARCH_JAVAADDITIONALOPTS="-Xms256m -Xmx512m" \
-              -e SONAR_WEB_JAVAADDITIONALOPTS="-Xms512m -Xmx1024m" \
-              -e SONAR_CE_JAVAADDITIONALOPTS="-Xms256m -Xmx512m" \
-              -e ES_JAVA_OPTS="-Xms256m -Xmx512m" \
-              -e SONAR_LOG_LEVEL=WARN \
+              -p 0:9000 \
               -v sonarqube_temp_data:/opt/sonarqube/data \
               -v sonarqube_temp_logs:/opt/sonarqube/logs \
               -v sonarqube_temp_extensions:/opt/sonarqube/extensions \
-              --memory=2g \
-              --memory-swap=3g \
-              --cpus="1.5" \
-              sonarqube:9.9-community
+              sonarqube:community
 
-            sleep 10
+            # Esperar container subir
+            sleep 30
+
+            # Capturar porta dinâmica
+            PORT=$(docker inspect sonarqube-temp \
+              --format '{{ (index (index .NetworkSettings.Ports "9000/tcp") 0).HostPort }}')
+
+            echo "PORT=$PORT" > /tmp/sonar_port.env
           EOF
 
-      - name: Obter porta do SonarQube
+      - name: Copiar arquivo de porta do servidor
         run: |
-          SONAR_PORT=$(ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} 'cat /tmp/sonar_port.env | cut -d= -f2')
-          echo "SONAR_PORT=$SONAR_PORT" >> $GITHUB_ENV
+          scp -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/sonar_port.env ./sonar_port.env
 
-      - name: Instalar SonarQube Scanner
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
+      - name: Definir URL do SonarQube
+        run: |
+          source ./sonar_port.env
+          echo "SONAR_HOST_URL=http://${{ secrets.SERVER_HOST }}:$PORT" >> $GITHUB_ENV
 
-      - run: npm install -g sonarqube-scanner
+      - name: Instalar scanner SonarQube
+        run: |
+          npm install -g sonarqube-scanner
 
-      - name: Executar análise SonarQube otimizada
+      - name: Rodar análise SonarQube
+        run: |
+          source ./sonar_port.env
+          sonar-scanner \
+            -Dsonar.projectKey=meu-projeto \
+            -Dsonar.sources=. \
+            -Dsonar.host.url=http://${{ secrets.SERVER_HOST }}:$PORT \
+            -Dsonar.login=${{ secrets.SONAR_TOKEN }}
+
+      - name: Verificar Quality Gate
         env:
+          SONAR_HOST_URL: ${{ env.SONAR_HOST_URL }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
-          SONAR_HOST_URL="http://${{ secrets.SERVER_HOST }}:$SONAR_PORT"
-          timeout 900 sonar-scanner \
-            -Dsonar.projectKey=gerenciador-tarefas \
-            -Dsonar.projectName="Gerenciador de Tarefas" \
-            -Dsonar.sources=. \
-            -Dsonar.host.url=$SONAR_HOST_URL \
-            -Dsonar.login=$SONAR_TOKEN \
-            -Dsonar.exclusions=**/node_modules/**,**/*.log,**/*.md,**/*.txt \
-            -Dsonar.sourceEncoding=UTF-8 \
-            -Dsonar.scanner.maxHeap=512m
+          echo "Esperando análise no SonarQube..."
+          sleep 15
+          # Opcional: implementar verificação com API do SonarQube
 
-      - name: Verificar Quality Gate (flexível)
+      - name: Limpar SonarQube temporário e volumes
+        if: always()
         run: |
-          SONAR_HOST_URL="http://${{ secrets.SERVER_HOST }}:$SONAR_PORT"
-          for i in {1..10}; do
-            RESPONSE=$(timeout 10 curl -s -u ${{ secrets.SONAR_TOKEN }}: \
-              "$SONAR_HOST_URL/api/qualitygates/project_status?projectKey=gerenciador-tarefas")
-            STATUS=$(echo "$RESPONSE" | jq -r '.projectStatus.status')
-            if [ "$STATUS" == "OK" ]; then
-              echo "✅ Quality Gate passou!"
-              exit 0
-            elif [ "$STATUS" == "ERROR" ]; then
-              echo "⚠️ Quality Gate falhou, mas continuando..."
-              exit 0
-            fi
-            sleep 15
-          done
-          echo "✅ Análise concluída - continuando deploy..."
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
+            docker stop sonarqube-temp || true
+            docker rm sonarqube-temp || true
+            docker volume rm sonarqube_temp_data sonarqube_temp_logs sonarqube_temp_extensions || true
+            rm -f /tmp/sonar_port.env
+          EOF
