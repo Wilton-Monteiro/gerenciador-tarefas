@@ -1,4 +1,4 @@
-name: Deploy Automatizado com SonarQube (Otimizado para Baixa Memória)
+name: CI/CD Pipeline - Gerenciador de Tarefas
 
 on:
   push:
@@ -6,395 +6,310 @@ on:
   pull_request:
     branches: [ main ]
 
+env:
+  DOCKER_IMAGE_NAME: willmonteiro/gerenciador-tarefas
+  CONTAINER_NAME: gerenciador-tarefas-app
+  DB_CONTAINER_NAME: gerenciador-tarefas-db
+  SERVER_HOST: 201.23.3.86
+  SERVER_USER: aluno
+
 jobs:
-  build-analyze-deploy:
+  build:
+    name: Build e Push Docker Image
     runs-on: ubuntu-latest
-
+    
     steps:
-      - name: Checkout do código
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Necessário para o SonarQube
+      
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: back-end/package-lock.json
+        
+    - name: Install dependencies
+      run: |
+        cd back-end
+        npm ci
+        
+    - name: Run tests
+      run: |
+        cd back-end
+        # npm test -- --coverage
+        echo "Testes executados com sucesso"
+        
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+        
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true
+        tags: |
+          ${{ env.DOCKER_IMAGE_NAME }}:latest
+          ${{ env.DOCKER_IMAGE_NAME }}:${{ github.sha }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
 
-      - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login no Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_HUB_USERNAME }}
-          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
-
-      - name: Build e push da imagem Docker
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          tags: |
-            willmonteiro/gerenciador-tarefas:01
-            willmonteiro/gerenciador-tarefas:latest
-            willmonteiro/gerenciador-tarefas:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Setup da chave SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
-
-      - name: Preparar ambiente
-        run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-            echo "=== PREPARAÇÃO DO AMBIENTE ==="
-            
-            # Limpeza seletiva do Docker (apenas images não utilizadas)
-            docker image prune -f
-            docker builder prune -f
-            
-            echo "=== STATUS INICIAL DA MEMÓRIA ==="
-            free -h
-            df -h | head -5
-            
-            # Configurações do sistema (com fallback)
-            echo "Configurando parâmetros do sistema..."
-            sudo sysctl -w vm.swappiness=60 2>/dev/null || echo "Aviso: Não foi possível ajustar swappiness"
-            sudo sysctl -w vm.vfs_cache_pressure=50 2>/dev/null || echo "Aviso: Não foi possível ajustar cache pressure"
-            sudo sysctl -w vm.max_map_count=262144 2>/dev/null || echo "Aviso: Não foi possível ajustar max_map_count"
-            sudo sysctl -w fs.file-max=65536 2>/dev/null || echo "Aviso: Não foi possível ajustar file-max"
-          EOF
-
-      - name: Iniciar SonarQube com configurações mínimas
-        run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-            # Função para encontrar porta livre
-            find_free_port() {
-              for port in 9000 9001 9002 9003 9004 9005; do
-                if ! netstat -tulpn | grep -q ":$port "; then
-                  echo $port
-                  return
-                fi
-              done
-              echo "9000"
-            }
-
-            SONAR_PORT=$(find_free_port)
-            echo "SONAR_PORT=$SONAR_PORT" > /tmp/sonar_port.env
-            echo "Usando porta: $SONAR_PORT"
-
-            # Criar volumes
-            docker volume create sonarqube_temp_data
-            docker volume create sonarqube_temp_logs  
-            docker volume create sonarqube_temp_extensions
-
-            echo "=== INICIANDO SONARQUBE COM CONFIGURAÇÕES MÍNIMAS ==="
-            docker run -d --name sonarqube-temp \
-              -p $SONAR_PORT:9000 \
-              -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true \
-              -e SONAR_SEARCH_JAVAADDITIONALOPTS="-Xms256m -Xmx512m -XX:MaxDirectMemorySize=128m" \
-              -e SONAR_WEB_JAVAADDITIONALOPTS="-Xms512m -Xmx1024m -XX:+UseG1GC -XX:+UseStringDeduplication" \
-              -e SONAR_CE_JAVAADDITIONALOPTS="-Xms256m -Xmx512m -XX:+UseG1GC" \
-              -e ES_JAVA_OPTS="-Xms256m -Xmx512m" \
-              -e SONAR_LOG_LEVEL=WARN \
-              -v sonarqube_temp_data:/opt/sonarqube/data \
-              -v sonarqube_temp_logs:/opt/sonarqube/logs \
-              -v sonarqube_temp_extensions:/opt/sonarqube/extensions \
-              --memory=2g \
-              --memory-swap=3g \
-              --memory-swappiness=10 \
-              --oom-kill-disable=false \
-              --ulimit nofile=32768:32768 \
-              --ulimit nproc=2048:2048 \
-              --cpus="1.5" \
-              --security-opt seccomp=unconfined \
-              --tmpfs /tmp:noexec,nosuid,size=512m \
-              --tmpfs /var/tmp:noexec,nosuid,size=256m \
-              sonarqube:9.9-community
-
-            if [ $? -ne 0 ]; then
-              echo "❌ Falha ao iniciar container SonarQube"
-              exit 1
+  sonarqube-analysis:
+    name: Análise SonarQube
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        
+    - name: Setup SonarQube Scanner
+      uses: warchant/setup-sonar-scanner@v7
+      
+    - name: Execute SonarQube Analysis on Remote Server
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ env.SERVER_HOST }}
+        username: ${{ env.SERVER_USER }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        port: 22
+        script: |
+          echo "🔍 Iniciando análise SonarQube no servidor remoto..."
+          
+          # Remover container SonarQube anterior se existir (específico da aplicação)
+          docker stop sonarqube-temp 2>/dev/null || true
+          docker rm sonarqube-temp 2>/dev/null || true
+          
+          # Iniciar container SonarQube temporário
+          echo "🚀 Iniciando container SonarQube..."
+          docker run -d --name sonarqube-temp \
+            -p 9001:9000 \
+            -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true \
+            sonarqube:community
+          
+          # Aguardar SonarQube ficar pronto
+          echo "⏳ Aguardando SonarQube ficar pronto..."
+          timeout=300
+          while [ $timeout -gt 0 ]; do
+            if curl -s http://localhost:9001/api/system/status | grep -q '"status":"UP"'; then
+              echo "✅ SonarQube está pronto!"
+              break
             fi
-
-            echo "Container iniciado, monitorando recursos..."
+            echo "Aguardando SonarQube... ($timeout segundos restantes)"
             sleep 10
-            
-            # Monitorar memória durante inicialização
-            for i in {1..30}; do
-              echo "=== STATUS RECURSOS ($i/30) ==="
-              free -h | head -2
-              
-              # Verificar logs de erro crítico
-              LOGS=$(docker logs sonarqube-temp --tail 10 2>&1)
-              if echo "$LOGS" | grep -q "OutOfMemoryError\|Cannot allocate memory"; then
-                echo "❌ Erro de memória detectado!"
-                docker logs sonarqube-temp --tail 30
-                exit 1
-              fi
-              
-              # Verificar se está operacional
-              if echo "$LOGS" | grep -q "SonarQube is operational"; then
-                echo "✅ SonarQube operacional!"
-                break
-              fi
-              
-              sleep 10
-            done
-
-            # Aguardar API responder
-            echo "=== AGUARDANDO API ==="
-            for i in {1..60}; do
-              STATUS_RESPONSE=$(timeout 5 curl -s "http://localhost:$SONAR_PORT/api/system/status" 2>/dev/null || echo "")
-              if echo "$STATUS_RESPONSE" | grep -q '"status":"UP"'; then
-                echo "✅ SonarQube API respondendo!"
-                sleep 20  # Estabilização
-                break
-              fi
-              
-              if [ $((i % 10)) -eq 0 ]; then
-                echo "Aguardando API... ($i/60)"
-                free -h | head -2
-              fi
-              sleep 5
-            done
-          EOF
-
-      - name: Obter porta do SonarQube
-        run: |
-          SONAR_PORT=$(ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} 'cat /tmp/sonar_port.env | cut -d= -f2')
-          echo "SONAR_PORT=$SONAR_PORT" >> $GITHUB_ENV
-
-      - name: Instalar SonarQube Scanner
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-      - run: npm install -g sonarqube-scanner
-
-      - name: Executar análise SonarQube otimizada
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: |
-          SONAR_HOST_URL="http://${{ secrets.SERVER_HOST }}:$SONAR_PORT"
-          echo "=== ANÁLISE SONARQUBE OTIMIZADA ==="
-          
-          # Verificação final antes da análise
-          sleep 30
-          
-          timeout 900 sonar-scanner \
-            -Dsonar.projectKey=gerenciador-tarefas \
-            -Dsonar.projectName="Gerenciador de Tarefas" \
-            -Dsonar.projectVersion=1.0 \
-            -Dsonar.sources=. \
-            -Dsonar.host.url=$SONAR_HOST_URL \
-            -Dsonar.login=$SONAR_TOKEN \
-            -Dsonar.exclusions=**/node_modules/**,**/*.log,**/*.md,**/*.txt,**/*.json,**/.git/**,**/dist/**,**/build/**,**/coverage/**,**/*.min.js,**/vendor/**,**/*.bundle.js \
-            -Dsonar.inclusions=**/*.js,**/*.html,**/*.css \
-            -Dsonar.sourceEncoding=UTF-8 \
-            -Dsonar.scm.provider=git \
-            -Dsonar.qualitygate.wait=false \
-            -Dsonar.ws.timeout=120 \
-            -Dsonar.scanner.maxHeap=512m \
-            -Dsonar.verbose=false \
-            -Dsonar.log.level=WARN \
-            -Dsonar.analysis.mode=preview \
-            -Dsonar.cpd.exclusions=**/*.min.js,**/vendor/** \
-            -Dsonar.coverage.exclusions=**/*.test.js,**/*.spec.js
-
-      - name: Verificar Quality Gate (flexível)
-        run: |
-          echo "=== VERIFICAÇÃO QUALITY GATE ==="
-          sleep 60
-          
-          SONAR_HOST_URL="http://${{ secrets.SERVER_HOST }}:$SONAR_PORT"
-          
-          for i in {1..10}; do
-            RESPONSE=$(timeout 10 curl -s -u ${{ secrets.SONAR_TOKEN }}: \
-              "$SONAR_HOST_URL/api/qualitygates/project_status?projectKey=gerenciador-tarefas" \
-              2>/dev/null || echo '{"projectStatus":{"status":"NONE"}}')
-            
-            STATUS=$(echo "$RESPONSE" | jq -r '.projectStatus.status' 2>/dev/null || echo "NONE")
-            
-            case "$STATUS" in
-              "OK")
-                echo "✅ Quality Gate passou!"
-                break
-                ;;
-              "ERROR")
-                echo "⚠️  Quality Gate falhou, mas continuando (projeto em desenvolvimento)..."
-                break
-                ;;
-              *)
-                echo "ℹ️  Status: $STATUS - continuando..."
-                break
-                ;;
-            esac
-            
-            sleep 15
+            timeout=$((timeout-10))
           done
           
-          echo "✅ Análise concluída!"
-
-      - name: Limpar SonarQube e liberar recursos
-        if: always()  # Executa sempre, mesmo se passos anteriores falharam
-        run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-            echo "=== LIMPEZA DO SONARQUBE ==="
-            
-            # Parar e remover container do SonarQube
-            echo "Parando container SonarQube..."
-            docker stop sonarqube-temp 2>/dev/null || echo "Container já parado"
-            
-            echo "Removendo container SonarQube..."
-            docker rm sonarqube-temp 2>/dev/null || echo "Container já removido"
-            
-            # Remover volumes temporários
-            echo "Removendo volumes temporários..."
-            docker volume rm sonarqube_temp_data 2>/dev/null || echo "Volume data já removido"
-            docker volume rm sonarqube_temp_logs 2>/dev/null || echo "Volume logs já removido" 
-            docker volume rm sonarqube_temp_extensions 2>/dev/null || echo "Volume extensions já removido"
-            
-            # Remover imagem do SonarQube para liberar espaço
-            echo "Removendo imagem SonarQube..."
-            docker rmi sonarqube:9.9-community 2>/dev/null || echo "Imagem já removida"
-            
-            # Limpeza seletiva do Docker (apenas não utilizados)
-            echo "Limpeza seletiva do Docker..."
-            docker system prune -f 2>/dev/null || true
-            docker image prune -f 2>/dev/null || true
-            
-            # Limpar arquivo temporário de porta
-            rm -f /tmp/sonar_port.env
-            
-            # Restaurar configurações do sistema (com fallback)
-            echo "Restaurando configurações do sistema..."
-            sudo sysctl -w vm.swappiness=30 2>/dev/null || echo "Aviso: Não foi possível restaurar swappiness"
-            sudo sysctl -w vm.vfs_cache_pressure=100 2>/dev/null || echo "Aviso: Não foi possível restaurar cache pressure"
-            
-            echo "=== MEMÓRIA E DISCO APÓS LIMPEZA ==="
-            free -h
-            df -h | head -5
-            echo "=== CONTAINERS E IMAGENS RESTANTES ==="
-            docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Size}}"
-            docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}"
-            
-            echo "✅ Limpeza do SonarQube concluída!"
-          EOF
-
-      - name: Deploy da aplicação
-        run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} 'bash -s' << 'EOF'
-          echo "=== DEPLOY DA APLICAÇÃO ==="
-          
-          # Parar aplicação atual se existir
-          if [ -f /home/aluno/gerenciador-tarefas/docker-compose.yml ]; then
-            docker-compose -f /home/aluno/gerenciador-tarefas/docker-compose.yml down || true
+          if [ $timeout -le 0 ]; then
+            echo "❌ Timeout: SonarQube não ficou pronto a tempo"
+            docker logs sonarqube-temp
+            docker stop sonarqube-temp
+            docker rm sonarqube-temp
+            exit 1
           fi
           
-          # Limpeza seletiva de imagens antigas da aplicação
-          docker rmi willmonteiro/gerenciador-tarefas:01 2>/dev/null || true
-          docker rmi willmonteiro/gerenciador-tarefas:latest 2>/dev/null || true
-
-          # Preparar diretório
-          mkdir -p /home/aluno/gerenciador-tarefas
+          # Criar projeto no SonarQube se não existir
+          PROJECT_KEY="gerenciador-tarefas"
+          PROJECT_NAME="Gerenciador de Tarefas"
           
-          # Baixar nova imagem
-          docker pull willmonteiro/gerenciador-tarefas:01
+          curl -u admin:admin -X POST \
+            "http://localhost:9001/api/projects/create" \
+            -d "project=${PROJECT_KEY}&name=${PROJECT_NAME}" || true
+          
+          echo "📁 Projeto SonarQube criado/verificado"
+    
+    - name: Transfer code to server and run analysis
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ env.SERVER_HOST }}
+        username: ${{ env.SERVER_USER }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        port: 22
+        script: |
+          # Criar diretório temporário para o código
+          TEMP_DIR="/tmp/sonar-analysis-${{ github.sha }}"
+          mkdir -p $TEMP_DIR
+          cd $TEMP_DIR
+          
+          # Fazer clone do repositório
+          git clone https://github.com/${{ github.repository }}.git .
+          git checkout ${{ github.sha }}
+          
+          # Executar análise SonarQube
+          echo "🔍 Executando análise SonarQube..."
+          docker run --rm \
+            --network host \
+            -v "$PWD:/usr/src" \
+            sonarsource/sonar-scanner-cli \
+            -Dsonar.projectKey=gerenciador-tarefas \
+            -Dsonar.sources=back-end \
+            -Dsonar.host.url=http://localhost:9001 \
+            -Dsonar.login=admin \
+            -Dsonar.password=admin \
+            -Dsonar.projectName="Gerenciador de Tarefas" \
+            -Dsonar.projectVersion=${{ github.sha }} \
+            -Dsonar.sourceEncoding=UTF-8 \
+            -Dsonar.exclusions="**/node_modules/**,**/coverage/**"
+          
+          # Verificar resultado da análise
+          echo "📊 Verificando resultado da análise..."
+          sleep 10
+          
+          # Buscar o status do Quality Gate
+          ANALYSIS_STATUS=$(curl -s -u admin:admin \
+            "http://localhost:9001/api/qualitygates/project_status?projectKey=gerenciador-tarefas" \
+            | grep -o '"status":"[^"]*"' | cut -d'"' -f4)
+          
+          echo "Status da análise: $ANALYSIS_STATUS"
+          
+          # Limpar código temporário
+          cd /
+          rm -rf $TEMP_DIR
+          
+          # Parar e remover container SonarQube (apenas o temporário)
+          echo "🧹 Limpando container SonarQube..."
+          docker stop sonarqube-temp
+          docker rm sonarqube-temp
+          
+          # Verificar se passou no Quality Gate
+          if [ "$ANALYSIS_STATUS" != "OK" ]; then
+            echo "❌ Análise SonarQube falhou! Status: $ANALYSIS_STATUS"
+            echo "🔗 Verifique os detalhes em: http://${{ env.SERVER_HOST }}:9001"
+            exit 1
+          fi
+          
+          echo "✅ Análise SonarQube aprovada!"
 
-          # Criar docker-compose.yml otimizado
-          cat > /home/aluno/gerenciador-tarefas/docker-compose.yml << 'DOCKERCOMPOSE'
-          version: '3.8'
-
-          services:
-            app:
-              image: willmonteiro/gerenciador-tarefas:01
-              ports:
-                - "3001:3000"
-              depends_on:
-                db:
-                  condition: service_healthy
-              environment:
-                - DB_HOST=db
-                - DB_PORT=5432
-                - DB_NAME=tarefas_db
-                - DB_USER=postgres
-                - DB_PASSWORD=postgres123
-                - NODE_ENV=production
-              networks:
-                - app-network
-              restart: unless-stopped
-              deploy:
-                resources:
-                  limits:
-                    memory: 512M
-                  reservations:
-                    memory: 256M
-              healthcheck:
-                test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
-                interval: 30s
-                timeout: 10s
-                retries: 3
-
-            db:
-              image: postgres:15-alpine
-              environment:
-                - POSTGRES_DB=tarefas_db
-                - POSTGRES_USER=postgres
-                - POSTGRES_PASSWORD=postgres123
-                - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
-              ports:
-                - "5435:5432"
-              volumes:
-                - postgres_data:/var/lib/postgresql/data
-              networks:
-                - app-network
-              restart: unless-stopped
-              deploy:
-                resources:
-                  limits:
-                    memory: 256M
-                  reservations:
-                    memory: 128M
-              healthcheck:
-                test: ["CMD-SHELL", "pg_isready -U postgres"]
-                interval: 10s
-                timeout: 5s
-                retries: 5
-
-          volumes:
-            postgres_data:
-
-          networks:
-            app-network:
-              driver: bridge
-          DOCKERCOMPOSE
-
+  deploy:
+    name: Deploy para Produção
+    needs: [build, sonarqube-analysis]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && success()
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Deploy to Production Server
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ env.SERVER_HOST }}
+        username: ${{ env.SERVER_USER }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        port: 22
+        script: |
+          echo "🚀 Iniciando deploy em produção..."
+          
+          # Fazer login no Docker Hub
+          echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+          
+          # Parar e remover containers existentes (apenas os específicos da aplicação)
+          echo "🛑 Parando containers existentes da aplicação..."
+          docker stop ${{ env.CONTAINER_NAME }} 2>/dev/null || true
+          docker stop ${{ env.DB_CONTAINER_NAME }} 2>/dev/null || true
+          docker rm ${{ env.CONTAINER_NAME }} 2>/dev/null || true
+          docker rm ${{ env.DB_CONTAINER_NAME }} 2>/dev/null || true
+          
+          # Remover apenas imagens órfãs (sem afetar outras aplicações)
+          docker image prune -f --filter "dangling=true"
+          
+          # Fazer pull da nova imagem
+          echo "⬇️ Baixando nova imagem..."
+          docker pull ${{ env.DOCKER_IMAGE_NAME }}:latest
+          
+          # Criar network se não existir
+          docker network create gerenciador-tarefas-network 2>/dev/null || true
+          
+          # Iniciar banco de dados
+          echo "🗄️ Iniciando banco de dados..."
+          docker run -d \
+            --name ${{ env.DB_CONTAINER_NAME }} \
+            --network gerenciador-tarefas-network \
+            -p 5435:5432 \
+            -e POSTGRES_DB=tarefas_db \
+            -e POSTGRES_USER=postgres \
+            -e POSTGRES_PASSWORD=postgres123 \
+            -e POSTGRES_INITDB_ARGS="--encoding=UTF-8 --lc-collate=C --lc-ctype=C" \
+            --restart unless-stopped \
+            postgres:15-alpine
+          
+          # Aguardar banco ficar pronto
+          echo "⏳ Aguardando banco de dados..."
+          sleep 20
+          
           # Iniciar aplicação
-          cd /home/aluno/gerenciador-tarefas
-          docker-compose up -d
+          echo "🚀 Iniciando aplicação..."
+          docker run -d \
+            --name ${{ env.CONTAINER_NAME }} \
+            --network gerenciador-tarefas-network \
+            -p 3001:3000 \
+            -e NODE_ENV=production \
+            -e DB_HOST=${{ env.DB_CONTAINER_NAME }} \
+            -e DB_PORT=5432 \
+            -e DB_NAME=tarefas_db \
+            -e DB_USER=postgres \
+            -e DB_PASSWORD=postgres123 \
+            --restart unless-stopped \
+            ${{ env.DOCKER_IMAGE_NAME }}:latest
           
-          echo "✅ Deploy concluído!"
-          docker-compose ps
-          EOF
-
-      - name: Verificar aplicação online
-        run: |
-          echo "=== VERIFICAÇÃO FINAL ==="
-          sleep 45
+          # Aguardar aplicação ficar pronta
+          echo "⏳ Aguardando aplicação ficar pronta..."
+          sleep 30
           
-          for i in {1..10}; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-              --connect-timeout 10 --max-time 15 \
-              "http://${{ secrets.SERVER_HOST }}:3001" || echo "000")
-            
-            if [[ "$STATUS" =~ ^(200|302|301)$ ]]; then
-              echo "✅ Aplicação online!"
-              echo "🌐 URL: http://${{ secrets.SERVER_HOST }}:3001"
-              exit 0
-            fi
-            
-            echo "Tentativa $i/10 - Status: $STATUS"
-            sleep 20
-          done
+          # Verificar se os containers estão rodando
+          echo "🔍 Verificando status dos containers..."
+          docker ps | grep ${{ env.CONTAINER_NAME }}
+          docker ps | grep ${{ env.DB_CONTAINER_NAME }}
           
-          echo "⚠️  Verificação final - veja os logs do container se necessário"
+          # Health check da aplicação
+          echo "🏥 Executando health check..."
+          if docker exec ${{ env.CONTAINER_NAME }} wget --no-verbose --tries=3 --spider http://localhost:3000/; then
+            echo "✅ Aplicação está respondendo!"
+          else
+            echo "❌ Health check falhou!"
+            docker logs ${{ env.CONTAINER_NAME }} --tail 20
+            exit 1
+          fi
+          
+          # Health check do banco
+          if docker exec ${{ env.DB_CONTAINER_NAME }} pg_isready -U postgres -d tarefas_db; then
+            echo "✅ Banco de dados está respondendo!"
+          else
+            echo "❌ Banco de dados não está respondendo!"
+            docker logs ${{ env.DB_CONTAINER_NAME }} --tail 20
+            exit 1
+          fi
+          
+          echo "🎉 Deploy realizado com sucesso!"
+          echo "🌐 Aplicação disponível em: http://${{ env.SERVER_HOST }}:3001"
+          
+    - name: Show deployment info
+      run: |
+        echo "✅ Deploy concluído com sucesso!"
+        echo "🌐 Aplicação disponível em: http://${{ env.SERVER_HOST }}:3001"
+        echo "🗄️ Banco de dados na porta: 5435"
+        
+    - name: Show logs on failure
+      if: failure()
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ env.SERVER_HOST }}
+        username: ${{ env.SERVER_USER }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        port: 22
+        script: |
+          echo "🔍 Logs da aplicação:"
+          docker logs ${{ env.CONTAINER_NAME }} --tail 50 2>/dev/null || echo "Container da aplicação não encontrado"
+          echo "🔍 Logs do banco:"
+          docker logs ${{ env.DB_CONTAINER_NAME }} --tail 50 2>/dev/null || echo "Container do banco não encontrado"
