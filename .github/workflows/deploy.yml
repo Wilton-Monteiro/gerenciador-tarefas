@@ -46,7 +46,6 @@ jobs:
             sudo sysctl -w vm.max_map_count=262144
             sudo sysctl -w fs.file-max=65536
             
-            
             # Iniciar SonarQube
             docker run -d --name sonarqube-temp \
               -p 9000:9000 \
@@ -124,7 +123,7 @@ jobs:
             # Iniciar aplicação
             docker run -d --name gerenciador-tarefas \
               --network app-network \
-              -p 3001:3000 \
+              -p 8248-8253:3000 \
               -e DB_HOST=postgres-db \
               -e DB_PORT=5432 \
               -e DB_NAME=tarefas_db \
@@ -139,15 +138,14 @@ jobs:
           echo "Aguardando aplicação inicializar..."
           sleep 30
           
-          for i in {1..10}; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.SERVER_HOST }}:3001 || echo "000")
+          # Tentativa para qualquer porta no intervalo 8248-8253
+          for port in {8248..8253}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.SERVER_HOST }}:$port || echo "000")
             if [ "$STATUS" = "200" ] || [ "$STATUS" = "302" ]; then
-              echo "✅ Aplicação online em http://${{ secrets.SERVER_HOST }}:3001"
+              echo "✅ Aplicação online em http://${{ secrets.SERVER_HOST }}:$port"
               exit 0
             fi
-            echo "Tentativa $i/10... Status: $STATUS"
-            sleep 15
           done
-          
-          echo "❌ Aplicação não respondeu"
+
+          echo "❌ Aplicação não respondeu em nenhuma porta do intervalo 8248-8253"
           exit 1
