@@ -44,16 +44,33 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Preparar ambiente para SonarQube
+      - name: Limpar memória e preparar ambiente
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-            echo "=== PREPARANDO AMBIENTE PARA SONARQUBE ==="
+            echo "=== LIMPEZA COMPLETA DE MEMÓRIA ==="
+            
+            # Parar TODOS os containers para liberar memória
+            docker stop $(docker ps -q) 2>/dev/null || true
+            docker rm $(docker ps -aq) 2>/dev/null || true
+            
+            # Limpeza agressiva do Docker
+            docker system prune -af --volumes
+            docker builder prune -af
+            
+            # Limpar cache do sistema
+            sudo sync
+            sudo sysctl -w vm.drop_caches=3
+            
+            echo "=== MEMÓRIA APÓS LIMPEZA ==="
+            free -h
+            
+            # Configurar swap para ser mais agressivo (temporário)
+            sudo sysctl -w vm.swappiness=60
+            sudo sysctl -w vm.vfs_cache_pressure=50
             
             # Configurações obrigatórias do Elasticsearch
             sudo sysctl -w vm.max_map_count=262144
             sudo sysctl -w fs.file-max=65536
-            
-            echo "✅ Ambiente preparado para SonarQube"
           EOF
 
       - name: Iniciar SonarQube com configurações mínimas
@@ -224,47 +241,48 @@ jobs:
           
           echo "✅ Análise concluída!"
 
-      - name: Limpar SonarQube temporário e liberar recursos
-        if: always()
+      - name: Limpar SonarQube e liberar recursos
+        if: always()  # Executa sempre, mesmo se passos anteriores falharam
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-            echo "=== LIMPEZA DO SONARQUBE TEMPORÁRIO ==="
+            echo "=== LIMPEZA DO SONARQUBE ==="
             
-            # Parar e remover container SonarQube temporário
-            echo "Parando container SonarQube temporário..."
+            # Parar e remover container do SonarQube
+            echo "Parando container SonarQube..."
             docker stop sonarqube-temp 2>/dev/null || echo "Container já parado"
             
-            echo "Removendo container SonarQube temporário..."
+            echo "Removendo container SonarQube..."
             docker rm sonarqube-temp 2>/dev/null || echo "Container já removido"
             
             # Remover volumes temporários
             echo "Removendo volumes temporários..."
-            docker volume rm sonarqube_temp_data 2>/dev/null || echo "Volume sonarqube_temp_data já removido"
-            docker volume rm sonarqube_temp_logs 2>/dev/null || echo "Volume sonarqube_temp_logs já removido"
-            docker volume rm sonarqube_temp_extensions 2>/dev/null || echo "Volume sonarqube_temp_extensions já removido"
+            docker volume rm sonarqube_temp_data 2>/dev/null || echo "Volume data já removido"
+            docker volume rm sonarqube_temp_logs 2>/dev/null || echo "Volume logs já removido" 
+            docker volume rm sonarqube_temp_extensions 2>/dev/null || echo "Volume extensions já removido"
             
-            # Remover imagem SonarQube para economizar espaço
+            # Remover imagem do SonarQube para liberar espaço
             echo "Removendo imagem SonarQube..."
-            docker rmi sonarqube:9.9-community 2>/dev/null || echo "Imagem SonarQube já removida"
+            docker rmi sonarqube:9.9-community 2>/dev/null || echo "Imagem já removida"
             
-            # Limpeza completa do sistema Docker
-            echo "Executando limpeza completa do Docker..."
-            docker system prune -af --volumes 2>/dev/null || true
-            docker builder prune -af 2>/dev/null || true
+            # Limpeza adicional do Docker
+            echo "Limpeza final do Docker..."
+            docker system prune -f 2>/dev/null || true
             
-            # Limpar cache do sistema operacional
-            echo "Limpando cache do sistema..."
-            sudo sync
-            sudo sysctl -w vm.drop_caches=3
-            
-            # Remover arquivo temporário da porta
+            # Limpar arquivo temporário de porta
             rm -f /tmp/sonar_port.env
             
-            # Mostrar status final da memória
-            echo "=== MEMÓRIA LIBERADA ==="
-            free -h
+            # Restaurar configurações de swap
+            sudo sysctl -w vm.swappiness=30 2>/dev/null || true
+            sudo sysctl -w vm.vfs_cache_pressure=100 2>/dev/null || true
             
-            echo "✅ SonarQube temporário removido e recursos liberados!"
+            # Limpar cache do sistema novamente
+            sudo sync && sudo sysctl -w vm.drop_caches=3 2>/dev/null || true
+            
+            echo "=== MEMÓRIA APÓS LIMPEZA ==="
+            free -h
+            df -h | grep -E '^/dev/'
+            
+            echo "✅ Limpeza do SonarQube concluída!"
           EOF
 
       - name: Deploy da aplicação
