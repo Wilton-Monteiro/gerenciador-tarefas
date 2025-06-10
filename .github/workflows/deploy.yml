@@ -70,6 +70,11 @@ jobs:
             done
           EOF
 
+      - name: Instalar unzip no servidor remoto
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "sudo apt-get update && sudo apt-get install -y unzip wget openjdk-11-jre"
+
+
       - name: Executar análise SonarQube
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
