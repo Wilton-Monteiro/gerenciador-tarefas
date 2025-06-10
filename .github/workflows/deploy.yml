@@ -44,33 +44,16 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Limpar memória e preparar ambiente
+      - name: Preparar ambiente para SonarQube
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-            echo "=== LIMPEZA COMPLETA DE MEMÓRIA ==="
-            
-            # Parar TODOS os containers para liberar memória
-            docker stop $(docker ps -q) 2>/dev/null || true
-            docker rm $(docker ps -aq) 2>/dev/null || true
-            
-            # Limpeza agressiva do Docker
-            docker system prune -af --volumes
-            docker builder prune -af
-            
-            # Limpar cache do sistema
-            sudo sync
-            sudo sysctl -w vm.drop_caches=3
-            
-            echo "=== MEMÓRIA APÓS LIMPEZA ==="
-            free -h
-            
-            # Configurar swap para ser mais agressivo (temporário)
-            sudo sysctl -w vm.swappiness=60
-            sudo sysctl -w vm.vfs_cache_pressure=50
+            echo "=== PREPARANDO AMBIENTE PARA SONARQUBE ==="
             
             # Configurações obrigatórias do Elasticsearch
             sudo sysctl -w vm.max_map_count=262144
             sudo sysctl -w fs.file-max=65536
+            
+            echo "✅ Ambiente preparado para SonarQube"
           EOF
 
       - name: Iniciar SonarQube com configurações mínimas
