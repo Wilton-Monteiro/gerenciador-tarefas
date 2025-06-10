@@ -93,7 +93,13 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
             
-            sonar-scanner \
+            mkdir -p \$HOME/sonar
+            cd \$HOME/sonar
+
+            wget -O sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.zip
+            unzip -o sonar-scanner.zip
+
+           /sonar-scanner-4.8.0.2856-linux/bin/sonar-scanner \
               -Dsonar.projectKey=gerenciador-tarefas \
               -Dsonar.projectName="Gerenciador de Tarefas" \
               -Dsonar.sources=. \
