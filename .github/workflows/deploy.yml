@@ -84,10 +84,14 @@ jobs:
             wget -q -O sonar-scanner.tar.gz https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.tar.gz
             tar -xzf sonar-scanner.tar.gz
 
+            # Clonar o projeto, se necessário (ou use rsync, ou monte volume antes)
+            rm -rf gerenciador-tarefas
+            git clone https://github.com/SEU_USUARIO/gerenciador-tarefas.git
+            cd gerenciador-tarefas
 
             # Executar análise (desde que o sonar-project.properties esteja aqui)
-            \$HOME/sonar/sonar-scanner-4.8.0.2856-linux/bin/sonar-scanner
-          EOF
+          \$HOME/sonar/sonar-scanner-4.8.0.2856-linux/bin/sonar-scanner
+           EOF
 
 
       - name: Limpar SonarQube
