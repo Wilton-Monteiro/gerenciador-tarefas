@@ -72,7 +72,7 @@ jobs:
             echo "Aguardando SonarQube atingir status '"UP"'..."
             for i in {1..50}; do
               # Usa sintaxe correta para curl -u e caminho absoluto para jq
-              STATUS=$(curl -s -u "$SONAR_USER:$SONAR_PASS" "http://localhost:8249/api/system/status" | "$JQ_PATH" -r .status)
+              STATUS=$(curl -s -u "$SONAR_USER:$SONAR_PASS" "http://localhost:8250/api/system/status" | "$JQ_PATH" -r .status)
               echo "Status atual: $STATUS"
               if [ "$STATUS" = "UP" ]; then
                 echo "SonarQube online."
@@ -93,7 +93,7 @@ jobs:
           # Define o caminho absoluto para o jq
           JQ_PATH="/home/aluno/jq"
           # Executa o comando via SSH usando o caminho absoluto do jq
-          SONAR_TOKEN=$(ssh -o StrictHostKeyChecking=no aluno@201.23.3.86 "curl -s -u \"$SONAR_USER:$SONAR_PASS\" -X POST 'http://localhost:8249/api/user_tokens/generate?name=ci-token' | \"$JQ_PATH\" -r .token")
+          SONAR_TOKEN=$(ssh -o StrictHostKeyChecking=no aluno@201.23.3.86 "curl -s -u \"$SONAR_USER:$SONAR_PASS\" -X POST 'http://localhost:8250/api/user_tokens/generate?name=ci-token' | \"$JQ_PATH\" -r .token")
           echo "::add-mask::$SONAR_TOKEN"
           echo "SONAR_TOKEN=$SONAR_TOKEN" >> $GITHUB_ENV
 
@@ -110,7 +110,7 @@ jobs:
           sonar-scanner -X \
             -Dsonar.projectKey=gerenciador-tarefas \
             -Dsonar.source=src \
-            -Dsonar.host.url=http://201.23.3.86:8249 \
+            -Dsonar.host.url=http://201.23.3.86:8250 \
             -Dsonar.token=$SONAR_TOKEN
            
 
