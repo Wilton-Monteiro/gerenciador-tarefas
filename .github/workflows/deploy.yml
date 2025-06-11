@@ -78,22 +78,23 @@ jobs:
          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
          mkdir -p \$HOME/sonar && cd \$HOME/sonar
 
-         # Baixar scanner (sem sudo, sem unzip)
-         wget -O sonar-scanner.tar.gz https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.tar.gz
-         tar -xzf sonar-scanner.tar.gz
+         # Baixar scanner com cabeçalho para evitar erro 403
+         wget --header="User-Agent: Mozilla/5.0" -O sonar-scanner.tar.gz https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.tar.gz
 
+         tar -xzf sonar-scanner.tar.gz
          cd sonar-scanner-4.8.0.2856-linux
 
          ./bin/sonar-scanner \
-         -Dsonar.projectKey=gerenciador-tarefas \
-         -Dsonar.projectName="Gerenciador de Tarefas" \
-         -Dsonar.sources=. \
-         -Dsonar.host.url=http://localhost:9000 \
-         -Dsonar.login=${{ secrets.SONAR_TOKEN }} \
-         -Dsonar.exclusions=**/node_modules/**,**/*.log,**/*.md,**/dist/**,**/build/** \
-         -Dsonar.qualitygate.wait=true \
-         -Dsonar.qualitygate.timeout=300
+          -Dsonar.projectKey=gerenciador-tarefas \
+          -Dsonar.projectName="Gerenciador de Tarefas" \
+          -Dsonar.sources=. \
+          -Dsonar.host.url=http://localhost:9000 \
+          -Dsonar.login=${{ secrets.SONAR_TOKEN }} \
+          -Dsonar.exclusions=**/node_modules/**,**/*.log,**/*.md,**/dist/**,**/build/** \
+          -Dsonar.qualitygate.wait=true \
+          -Dsonar.qualitygate.timeout=300
          EOF
+
 
 
 
