@@ -107,12 +107,12 @@ jobs:
           SONAR_TOKEN: ${{ env.SONAR_TOKEN }}
         run: |
           export PATH="$PWD/sonar-scanner-5.0.1.3006-linux/bin:$PATH"
-          sonar-scanner \
+          sonar-scanner -x \
             -Dsonar.projectKey=gerenciador-tarefas \
             -Dsonar.sources=src \
             -Dsonar.host.url=http://201.23.3.86:9090 \
             -Dsonar.token=$SONAR_TOKEN
-            -x
+           
 
 
       - name: Limpar SonarQube
