@@ -73,36 +73,13 @@ jobs:
       
 
 
-      - name: Executar análise SonarQube (sem sudo)
+      - name: Executar análise SonarQube
         run: |
          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-         # Criar diretórios
-         mkdir -p \$HOME/tools
-         mkdir -p \$HOME/sonar
-         cd \$HOME/tools
-
-         # Baixar e preparar o unzip portátil
-         wget https://raw.githubusercontent.com/pbatard/unzip-static/master/unzip-amd64 -O unzip
-         chmod +x unzip
-
-         # Exportar para o PATH local
-         export PATH="\$HOME/tools:\$PATH"
-
-         # Baixar e descompactar o SonarScanner
-         cd \$HOME/sonar
-         wget -O sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.zip
-         \$HOME/tools/unzip -o sonar-scanner.zip
-
-         # Executar o scanner
-         ./sonar-scanner-4.8.0.2856-linux/bin/sonar-scanner \
-         -Dsonar.projectKey=gerenciador-tarefas \
-         -Dsonar.projectName="Gerenciador de Tarefas" \
-         -Dsonar.sources=. \
-         -Dsonar.host.url=http://localhost:9000 \
-         -Dsonar.login=${{ secrets.SONAR_TOKEN }} \
-         -Dsonar.exclusions=**/node_modules/**,**/*.log,**/*.md,**/dist/**,**/build/** \
-         -Dsonar.qualitygate.wait=true \
-         -Dsonar.qualitygate.timeout=300
+         mkdir -p $HOME/sonar && cd $HOME/sonar
+         wget -O sonar-scanner.tar.gz https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.tar.gz
+         tar -xzf sonar-scanner.tar.gz
+         ./sonar-scanner-4.8.0.2856-linux/bin/sonar-scanner [seus parâmetros...]
          EOF
 
 
