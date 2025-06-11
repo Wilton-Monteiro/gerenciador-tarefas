@@ -109,7 +109,7 @@ jobs:
           export PATH="$PWD/sonar-scanner-5.0.1.3006-linux/bin:$PATH"
           sonar-scanner -X \
             -Dsonar.projectKey=gerenciador-tarefas \
-            -Dsonar.sources=src \
+            -Dsonar.source=src \
             -Dsonar.host.url=http://201.23.3.86:8088 \
             -Dsonar.token=$SONAR_TOKEN
            
