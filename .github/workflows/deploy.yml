@@ -76,22 +76,29 @@ jobs:
       - name: Executar análise SonarQube (sem sudo)
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-           # Caminho onde o scanner será instalado
-            mkdir -p \$HOME/sonar
-            cd \$HOME/sonar
+          # Caminho local onde o sonar-scanner será instalado e executado
+          mkdir -p \$HOME/sonar
+          cd \$HOME/sonar
 
-            # Baixar e extrair scanner localmente
-            wget -q -O sonar-scanner.tar.gz https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.tar.gz
-            tar -xzf sonar-scanner.tar.gz
+          # Baixar e extrair o scanner (se ainda não tiver)
+          if [ ! -d "sonar-scanner-4.8.0.2856-linux" ]; then
+          wget -q -O sonar-scanner.tar.gz https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.tar.gz
+           tar -xzf sonar-scanner.tar.gz
+          fi
 
-            # Clonar o projeto, se necessário (ou use rsync, ou monte volume antes)
-            rm -rf gerenciador-tarefas
-            git clone https://github.com/SEU_USUARIO/gerenciador-tarefas.git
-            cd gerenciador-tarefas
+           # Ir para o diretório do projeto (assumindo que você já enviou o código)
+          cd \$HOME/seu-projeto
 
-            # Executar análise (desde que o sonar-project.properties esteja aqui)
-            \$HOME/sonar/sonar-scanner-4.8.0.2856-linux/bin/sonar-scanner
+          # Verifica se o sonar-project.properties existe
+          if [ ! -f sonar-project.properties ]; then
+           echo "Arquivo sonar-project.properties não encontrado no diretório atual!"
+           exit 1
+           fi
+
+          # Executar a análise com o scanner local
+          \$HOME/sonar/sonar-scanner-4.8.0.2856-linux/bin/sonar-scanner
           EOF
+
 
 
       - name: Limpar SonarQube
