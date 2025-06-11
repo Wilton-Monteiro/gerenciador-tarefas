@@ -2,9 +2,8 @@ name: Deploy Automatizado com SonarQube
 
 on:
   push:
-    branches:
-      - main
-
+    branches: [ main ]
+  
 jobs:
   build-analyze-deploy:
     runs-on: ubuntu-latest
@@ -33,131 +32,131 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Configurar chave SSH no agente
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
-
-      - name: Parar e remover SonarQube temporário (caso exista)
+      - name: Setup da chave SSH
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} '
-            docker stop sonarqube-temp || true
-            docker rm sonarqube-temp || true
-          '
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Iniciar SonarQube temporário no servidor remoto
+      - name: Iniciar SonarQube e executar análise
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} '
-            docker pull sonarqube:9.9-community
-            docker run -d --name sonarqube-temp -p 9000:9000 \
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
+            # Configurar sistema
+            sudo sysctl -w vm.max_map_count=262144
+            sudo sysctl -w fs.file-max=65536
+            
+            # Iniciar SonarQube
+            docker run -d --name sonarqube-temp \
+              -p 9000:9000 \
               -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true \
               --memory=3g \
               --ulimit nofile=65536:65536 \
               sonarqube:9.9-community
-          '
-
-      - name: Aguardar SonarQube inicializar via API
-        run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} '
-            echo "Aguardando SonarQube atingir status UP..."
+            
+            # Aguardar inicialização
+            echo "Aguardando SonarQube inicializar..."
             for i in {1..60}; do
-              STATUS=$(curl -s http://localhost:9000/api/system/status | grep -oP "\"status\":\"\K[^\"]+")
-              echo "Status atual: $STATUS"
-              if [ "$STATUS" = "UP" ]; then
-                echo "SonarQube está UP."
-                exit 0
+              if curl -s http://localhost:9000/api/system/status | grep -q '"status":"UP"'; then
+                echo "✅ SonarQube iniciado com sucesso!"
+                break
+              fi
+              if [ $i -eq 60 ]; then
+                echo "❌ Timeout aguardando SonarQube"
+                docker logs sonarqube-temp --tail 20
+                exit 1
               fi
               sleep 10
             done
-            echo "Timeout esperando SonarQube subir."
-            docker logs sonarqube-temp --tail 20
-            exit 1
-          '
+          EOF
 
-      - name: Copiar projeto para o servidor remoto
+      - name: Copiar projeto para o servidor
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} 'rm -rf ~/projeto-tarefas'
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "rm -rf ~/projeto-tarefas"
           scp -r . ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:~/projeto-tarefas
+  
 
-      - name: Instalar e executar SonarScanner no servidor remoto
+
+      - name: Executar análise SonarQube (sem sudo)
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} '
-            mkdir -p $HOME/sonar
-            cd $HOME/sonar
-            if [ ! -d "sonar-scanner-4.8.0.2856-linux" ]; then
-              wget -q -O sonar-scanner.tar.gz https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.tar.gz
-              tar -xzf sonar-scanner.tar.gz
-            fi
-            cd $HOME/projeto-tarefas
-            if [ ! -f sonar-project.properties ]; then
-              echo "Arquivo sonar-project.properties não encontrado!"
-              exit 1
-            fi
-            $HOME/sonar/sonar-scanner-4.8.0.2856-linux/bin/sonar-scanner
-          '
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
+          # Caminho local onde o sonar-scanner será instalado e executado
+          mkdir -p \$HOME/sonar
+          cd \$HOME/sonar
 
-      - name: Parar e remover SonarQube temporário
+          # Baixar e extrair o scanner (se ainda não tiver)
+          if [ ! -d "sonar-scanner-4.8.0.2856-linux" ]; then
+          wget -q -O sonar-scanner.tar.gz https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.tar.gz
+           tar -xzf sonar-scanner.tar.gz
+          fi
+
+           # Ir para o diretório do projeto (assumindo que você já enviou o código)
+           cd \$HOME/projeto-tarefas
+
+
+          # Verifica se o sonar-project.properties existe
+          if [ ! -f sonar-project.properties ]; then
+           echo "Arquivo sonar-project.properties não encontrado no diretório atual!"
+           exit 1
+           fi
+
+          # Executar a análise com o scanner local
+          \$HOME/sonar/sonar-scanner-4.8.0.2856-linux/bin/sonar-scanner
+          EOF
+
+
+
+      - name: Limpar SonarQube
         if: always()
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} '
-            docker stop sonarqube-temp || true
-            docker rm sonarqube-temp || true
-          '
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
+            docker stop sonarqube-temp 2>/dev/null || true
+            docker rm sonarqube-temp 2>/dev/null || true
+          EOF
 
-      - name: Deploy da aplicação com Docker Compose
+      - name: Deploy da aplicação
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} '
-            mkdir -p ~/projeto-tarefas-deploy
-            cd ~/projeto-tarefas-deploy
-            # Parar e remover containers antigos
-            docker compose down || true
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
+            # Parar aplicação atual
+            docker stop gerenciador-tarefas 2>/dev/null || true
+            docker rm gerenciador-tarefas 2>/dev/null || true
+            docker stop postgres-db 2>/dev/null || true
+            docker rm postgres-db 2>/dev/null || true
+            
+            # Criar rede
+            docker network create app-network 2>/dev/null || true
+            
+            # Iniciar banco
+            docker run -d --name postgres-db \
+              --network app-network \
+              -e POSTGRES_DB=tarefas_db \
+              -e POSTGRES_USER=postgres \
+              -e POSTGRES_PASSWORD=postgres123 \
+              -v postgres_data:/var/lib/postgresql/data \
+              postgres:15-alpine
+            
+            # Aguardar banco inicializar
+            sleep 15
+            
+            # Iniciar aplicação
+            docker run -d --name gerenciador-tarefas \
+              --network app-network \
+              -p 8248-8253:3000 \
+              -e DB_HOST=postgres-db \
+              -e DB_PORT=5432 \
+              -e DB_NAME=tarefas_db \
+              -e DB_USER=postgres \
+              -e DB_PASSWORD=postgres123 \
+              -e NODE_ENV=production \
+              willmonteiro/gerenciador-tarefas:01
+          EOF
 
-            # Criar arquivo docker-compose.yml (ajuste conforme necessário)
-            cat > docker-compose.yml <<EOF
-            version: "3.8"
-            services:
-              postgres-db:
-                image: postgres:15-alpine
-                environment:
-                  POSTGRES_DB: tarefas_db
-                  POSTGRES_USER: postgres
-                  POSTGRES_PASSWORD: postgres123
-                volumes:
-                  - postgres_data:/var/lib/postgresql/data
-                networks:
-                  - app-network
-
-              gerenciador-tarefas:
-                image: willmonteiro/gerenciador-tarefas:01
-                ports:
-                  - "8248-8253:3000"
-                environment:
-                  DB_HOST: postgres-db
-                  DB_PORT: 5432
-                  DB_NAME: tarefas_db
-                  DB_USER: postgres
-                  DB_PASSWORD: postgres123
-                  NODE_ENV: production
-                networks:
-                  - app-network
-                depends_on:
-                  - postgres-db
-
-            volumes:
-              postgres_data:
-
-            networks:
-              app-network:
-            EOF
-
-            # Subir containers
-            docker compose up -d --build
-          '
-
-      - name: Verificar aplicação no intervalo de portas 8248-8253
+      - name: Verificar aplicação
         run: |
           echo "Aguardando aplicação inicializar..."
           sleep 30
+          
+          # Tentativa para qualquer porta no intervalo 8248-8253
           for port in {8248..8253}; do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.SERVER_HOST }}:$port || echo "000")
             if [ "$STATUS" = "200" ] || [ "$STATUS" = "302" ]; then
@@ -165,5 +164,6 @@ jobs:
               exit 0
             fi
           done
+
           echo "❌ Aplicação não respondeu em nenhuma porta do intervalo 8248-8253"
           exit 1
