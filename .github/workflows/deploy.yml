@@ -93,7 +93,7 @@ jobs:
           # Define o caminho absoluto para o jq
           JQ_PATH="/home/aluno/jq"
           # Executa o comando via SSH usando o caminho absoluto do jq
-          SONAR_TOKEN=$(ssh -o StrictHostKeyChecking=no aluno@201.23.3.86 "curl -s -u \"$SONAR_USER:$SONAR_PASS\" -X POST 'http://localhost:8088/api/user_tokens/generate?name=ci-token' | \"$JQ_PATH\" -r .token")
+          SONAR_TOKEN=$(ssh -o StrictHostKeyChecking=no aluno@201.23.3.86 "curl -s -u \"$SONAR_USER:$SONAR_PASS\" -X POST 'http://localhost:9090/api/user_tokens/generate?name=ci-token' | \"$JQ_PATH\" -r .token")
           echo "::add-mask::$SONAR_TOKEN"
           echo "SONAR_TOKEN=$SONAR_TOKEN" >> $GITHUB_ENV
 
