@@ -51,7 +51,7 @@ jobs:
               docker logs sonartmp || true
               exit 1
             fi
-
+          '
 
       - name: Download and install jq on remote server
         run: |
