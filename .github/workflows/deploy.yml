@@ -75,13 +75,26 @@ jobs:
 
       - name: Executar análise SonarQube
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-           mkdir -p $HOME/sonar && cd $HOME/sonar
-            wget --header="User-Agent: Mozilla/5.0" -O sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
-            sudo apt-get update && sudo apt-get install unzip -y
-           unzip sonar-scanner.zip
-          ./sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner -Dsonar.projectKey=SEU_PROJETO -Dsonar.sources=. -Dsonar.host.url=http://localhost:9000 -Dsonar.login=SEU_TOKEN
-          EOF
+         ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
+         
+         
+
+         curl -sSLo sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
+         unzip -o sonar-scanner.zip
+
+         cd sonar-scanner-4.8.0.2856-linux
+
+         ./bin/sonar-scanner \
+          -Dsonar.projectKey=gerenciador-tarefas \
+          -Dsonar.projectName="Gerenciador de Tarefas" \
+          -Dsonar.sources=. \
+          -Dsonar.host.url=http://localhost:9000 \
+          -Dsonar.login=${{ secrets.SONAR_TOKEN }} \
+          -Dsonar.exclusions=**/node_modules/**,**/*.log,**/*.md,**/dist/**,**/build/** \
+          -Dsonar.qualitygate.wait=true \
+          -Dsonar.qualitygate.timeout=300
+         EOF
+
 
       - name: Limpar SonarQube
         if: always()
