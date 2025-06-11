@@ -5,7 +5,7 @@ services:
     image: willmonteiro/gerenciador-tarefas:01
     container_name: gerenciador-tarefas-app
     ports:
-      - "3001:3000"
+      - "8248:3000"
     depends_on:
       - db
     environment:
