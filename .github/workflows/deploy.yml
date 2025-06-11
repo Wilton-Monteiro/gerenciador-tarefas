@@ -70,11 +70,7 @@ jobs:
             done
           EOF
 
-      - name: Copiar projeto para o servidor
-        run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "rm -rf ~/projeto-tarefas"
-          scp -r . ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:~/projeto-tarefas
-  
+      
 
 
       - name: Executar análise SonarQube (sem sudo)
@@ -91,13 +87,12 @@ jobs:
           fi
 
            # Ir para o diretório do projeto (assumindo que você já enviou o código)
-           cd \$HOME/projeto-tarefas
-
+          cd \$HOME/seu-projeto
 
           # Verifica se o sonar-project.properties existe
           if [ ! -f sonar-project.properties ]; then
            echo "Arquivo sonar-project.properties não encontrado no diretório atual!"
-           exit 1
+          exit 1
            fi
 
           # Executar a análise com o scanner local
