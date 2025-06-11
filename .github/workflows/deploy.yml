@@ -119,8 +119,8 @@ jobs:
         if: always()
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-            docker stop sonartmp 2>/dev/null || true
-            docker rm sonartmp 2>/dev/null || true
+            docker stop sonartmp || true
+            docker rm sonartmp || true
           EOF
 
       - name: Deploy da aplicação
