@@ -17,6 +17,17 @@ Aplicação web para gerenciamento de tarefas com **deploy automatizado**, **an�
 
 ---
 
+## Comandos para rodar a aplicação localmente:
+
+1º docker pull willmonteiro/gerenciador-tarefas:04
+
+2º docker run -d -p 8048:3000 willmonteiro/gerenciador-tarefas:04
+
+3º docker compose up -d
+
+4º Abrir o navegador e digitar: http://localhost:8248/
+
+
 ## Aplicação rodando em containers diferentes
 
 ![Image](https://github.com/user-attachments/assets/839c06c0-a705-450e-a07c-92406ffb3756)
@@ -40,7 +51,7 @@ a outra opção foi fazer fazer a inicialização via API.
 
 3º Banco de dados não funcionou depois do Deploy
 Solução, sem solução, porém muitas tentativas, muitas mesmo, foram realizadas, buscando encontrar algum
-erro entre variáveis de ambiente
+erro entre variáveis de ambiente.
 
 
 ## Aplicação disponível em:
