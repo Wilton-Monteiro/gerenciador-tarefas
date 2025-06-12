@@ -37,9 +37,11 @@ services:
     image: postgres:15-alpine
     container_name: gerenciador-tarefas-db
     environment:
-      - POSTGRES_DB=tarefas_db
+      - DB_HOST=db
+      - DB_PORT=5432
+      - POSTGRES_DB=tarefas_db  
+      - DB_USER=postgres
       - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres123
     ports:
       - "5435:5432"
     volumes:
