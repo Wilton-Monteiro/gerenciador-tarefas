@@ -140,7 +140,7 @@ jobs:
          # Parar aplicação atual
          docker stop gerenciador-tarefas 2>/dev/null || true
          docker rm gerenciador-tarefas 2>/dev/null || true
-         docker stop postgres-db 2>/dev/null || true
+         docker stop db 2>/dev/null || true
          docker rm postgres-db 2>/dev/null || true
       
          # Limpar rede antiga se existir
@@ -195,7 +195,7 @@ jobs:
          --network app-network \
          --restart unless-stopped \
          -p 8248:3000 \
-         -e DB_HOST=postgres-db \
+         -e DB_HOST=db \
          -e DB_PORT=5432 \
          -e DB_NAME=tarefas_db \
          -e DB_USER=postgres \
