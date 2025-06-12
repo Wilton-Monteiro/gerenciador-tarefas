@@ -52,8 +52,34 @@ gerenciador-tarefas/
 
 ---
 
+## Aplicação rodando em containers diferentes
+
+https://github.com/Wilton-Monteiro/gerenciador-tarefas/issues/1#issue-3141691587
+
+## Repositório ativo no Docker hub
+
+https://github.com/Wilton-Monteiro/gerenciador-tarefas/issues/2
+
+## Imagem da aplicação rodando localmente
+
+https://github.com/Wilton-Monteiro/gerenciador-tarefas/issues/3
+
+Análise de erros:
+
+1º Falta de memória no servidor. 
+Solução: problema solucionado pelo professor.
+
+2º Tentativa de desconpactar o Sonarqueb para a Análise do Sonar Scanner.
+Solução: Como não foi possível instalar o Unzip por falta de permissão de sudo,
+a outra opção foi fazer fazer a inicialização via API.
+
+3º Banco de dados não funcionou depois do Deploy
+Solução, sem solução, porém muitas tentativas, muitas mesmo, foram realizadas, buscando encontrar algum
+erro entre variáveis de ambiente
 
 
+## Aplicação disponível em:
+http://201.23.3.86:8248/
 
 
 
