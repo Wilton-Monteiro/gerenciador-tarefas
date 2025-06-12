@@ -130,8 +130,8 @@ jobs:
         if: always()
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-            docker stop sonarqube-temp 2>/dev/null || true
-            docker rm sonarqube-temp 2>/dev/null || true
+          docker stop sonartmp 2>/dev/null || true
+          docker rm sonartmp 2>/dev/null || true
           EOF
 
       - name: Deploy da aplicação
