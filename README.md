@@ -1,44 +1,9 @@
-# 📋 Gerenciador de Tarefas
+# 📋 Deploy automático - Gerenciador de Tarefas
 
 Aplicação web para gerenciamento de tarefas com **deploy automatizado**, **análise de código via SonarQube**, e publicação contínua de imagens no **Docker Hub**.
 
 ---
 
-## 🚀 Tecnologias Utilizadas
-
-- **Front-end**: React.js
-- **Back-end**: Node.js (Express)
-- **Banco de Dados**: PostgreSQL
-- **Containerização**: Docker & Docker Compose
-- **Repositório de Imagens**: Docker Hub
-- **CI/CD**: GitHub Actions
-- **Análise de Código**: SonarQube
-
----
-
-## 🗂️ Estrutura do Projeto
-gerenciador-tarefas/
-├── .github/
-│   └── workflows/
-│       └── deploy.yml                
-├── back-end/
-│   ├── controllers/
-│   │   └── tarefasController.js
-│   ├── node_modules/
-│   ├── db.js                          
-│   ├── index.js                       
-│   ├── init.sql                      
-│   ├── package.json
-│   └── routes.js                      
-├── front-end/
-│   ├── index.html
-│   ├── index.js
-│   └── styles.css
-├── init.sql                           
-├── dockerfile                         
-├── docker-compose.yml                
-├── sonar-project.properties           
-└── README.md
 
 ## 🚀 Tecnologias Utilizadas
 
