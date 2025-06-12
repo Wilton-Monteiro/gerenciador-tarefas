@@ -161,7 +161,7 @@ jobs:
             # Iniciar aplicação
             docker run -d --name gerenciador-tarefas \
               --network app-network \
-              -p 8248-8253:3000 \
+              -p 8248:3000 \
               -e DB_HOST=postgres-db \
               -e DB_PORT=5432 \
               -e DB_NAME=tarefas_db \
