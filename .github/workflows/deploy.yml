@@ -153,10 +153,10 @@ jobs:
          docker run -d --name db \
           --network app-network \
           -p 5435:5432 \
-          -e DB_HOST=db
-          -e DB_PORT=5432
+          -e DB_HOST=db \
+          -e DB_PORT=5432 \
           -e DB_NAME=tarefas_db \ 
-          -e DB_USER=postgres
+          -e DB_USER=postgres \
           -e DB_PASSWORD=postgres123 \
           -v postgres_data:/var/lib/postgresql/data \
           --health-cmd="pg_isready -U postgres -d tarefas_db" \
