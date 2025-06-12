@@ -141,7 +141,7 @@ jobs:
          docker stop gerenciador-tarefas 2>/dev/null || true
          docker rm gerenciador-tarefas 2>/dev/null || true
          docker stop db 2>/dev/null || true
-         docker rm postgres-db 2>/dev/null || true
+         docker rm db 2>/dev/null || true
       
          # Limpar rede antiga se existir
          docker network rm app-network 2>/dev/null || true
@@ -150,7 +150,7 @@ jobs:
          docker network create app-network --driver bridge
       
          # Iniciar banco EXATAMENTE como no seu docker-compose local
-         docker run -d --name postgres-db \
+         docker run -d --name db \
           --network app-network \
           -p 5435:5432 \
           - DB_HOST=db
@@ -170,7 +170,7 @@ jobs:
          # Aguardar banco ficar completamente saudável
          echo "Aguardando banco de dados ficar saudável..."
          for i in {1..60}; do
-         HEALTH_STATUS=$(docker inspect --format='{{.State.Health.Status}}' postgres-db 2>/dev/null || echo "starting")
+         HEALTH_STATUS=$(docker inspect --format='{{.State.Health.Status}}' db 2>/dev/null || echo "starting")
          echo "Tentativa $i/60: Status do banco = $HEALTH_STATUS"
          if [ "$HEALTH_STATUS" = "healthy" ]; then
           echo "Banco de dados está saudável!"
@@ -180,10 +180,10 @@ jobs:
          done
       
          # Verificação extra - testar conexão diretamente
-         docker exec postgres-db pg_isready -U postgres -d tarefas_db
+         docker exec db pg_isready -U postgres -d tarefas_db
          if [ $? -ne 0 ]; then
          echo "ERRO: Banco não está pronto mesmo com status healthy!"
-         docker logs postgres-db
+         docker logs db
          exit 1
          fi
       
