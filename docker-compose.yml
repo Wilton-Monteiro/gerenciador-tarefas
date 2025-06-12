@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   app:
-    image: willmonteiro/gerenciador-tarefas:01
+    image: docker push willmonteiro/gerenciador-tarefas:02
     container_name: gerenciador-tarefas-app
     ports:
       - "8248:3000"
