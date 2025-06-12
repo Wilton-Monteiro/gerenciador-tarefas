@@ -28,7 +28,7 @@ jobs:
         with:
           context: .
           push: true
-          tags: docker push willmonteiro/gerenciador-tarefas:02
+          tags: docker push willmonteiro/gerenciador-tarefas:03
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -206,7 +206,7 @@ jobs:
          --health-timeout=10s \
          --health-retries=3 \
          --health-start-period=40s \
-         docker push willmonteiro/gerenciador-tarefas:02
+         docker push willmonteiro/gerenciador-tarefas:03
          EOF
 
       - name: Verificar aplicação
