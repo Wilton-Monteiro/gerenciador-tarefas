@@ -4,8 +4,6 @@ const listaTarefas = document.getElementById('lista-tarefas');
 const botaoExcluirTodas = document.getElementById('botao-excluir-todas');
 const mensagemVazia = document.getElementById('mensagem-vazia');
 const loading = document.getElementById('loading');
-const totalTasks = document.getElementById('total-tasks');
-const taskCounter = document.getElementById('task-counter');
 
 let tarefas = [];
 
@@ -22,11 +20,6 @@ function mostrarMensagemVazia() {
     mensagemVazia.style.display = tarefas.length === 0 ? 'block' : 'none';
 }
 
-function atualizarContadores() {
-    totalTasks.textContent = tarefas.length;
-    taskCounter.textContent = tarefas.length;
-}
-
 // Busca tarefas do back-end ao iniciar
 async function carregarTarefas() {
     try {
@@ -38,7 +31,6 @@ async function carregarTarefas() {
         tarefas = await resposta.json();
         renderizarTarefas();
         mostrarMensagemVazia();
-        atualizarContadores();
     } catch (erro) {
         console.error('Erro ao carregar tarefas:', erro);
         alert('Erro ao carregar tarefas. Verifique a conexão.');
@@ -52,34 +44,30 @@ function renderizarTarefas() {
 
     tarefas.forEach((tarefa, indice) => {
         const li = document.createElement('li');
-        li.classList.add('task-item');
+        li.classList.add('item-tarefa');
 
-        const taskIcon = document.createElement('div');
-        taskIcon.classList.add('task-icon');
+        const span = document.createElement('span');
+        span.classList.add('texto-tarefa');
+        span.textContent = tarefa.descricao;
 
-        const taskContent = document.createElement('div');
-        taskContent.classList.add('task-content');
-        taskContent.textContent = tarefa.descricao;
+        const divBotoes = document.createElement('div');
+        divBotoes.classList.add('botoes-tarefa');
 
-        const taskActions = document.createElement('div');
-        taskActions.classList.add('task-actions');
+        const botaoEditar = document.createElement('button');
+        botaoEditar.textContent = 'Editar';
+        botaoEditar.classList.add('botao-editar');
+        botaoEditar.addEventListener('click', () => editarTarefa(indice));
 
-        const editBtn = document.createElement('button');
-        editBtn.textContent = 'Editar';
-        editBtn.classList.add('task-btn', 'edit-btn');
-        editBtn.addEventListener('click', () => editarTarefa(indice));
+        const botaoExcluir = document.createElement('button');
+        botaoExcluir.textContent = 'Excluir';
+        botaoExcluir.classList.add('botao-excluir');
+        botaoExcluir.addEventListener('click', () => excluirTarefa(tarefa.id));
 
-        const deleteBtn = document.createElement('button');
-        deleteBtn.textContent = 'Excluir';
-        deleteBtn.classList.add('task-btn', 'delete-btn');
-        deleteBtn.addEventListener('click', () => excluirTarefa(tarefa.id));
+        divBotoes.appendChild(botaoEditar);
+        divBotoes.appendChild(botaoExcluir);
 
-        taskActions.appendChild(editBtn);
-        taskActions.appendChild(deleteBtn);
-
-        li.appendChild(taskIcon);
-        li.appendChild(taskContent);
-        li.appendChild(taskActions);
+        li.appendChild(span);
+        li.appendChild(divBotoes);
         listaTarefas.appendChild(li);
     });
 }
@@ -161,24 +149,24 @@ botaoExcluirTodas.addEventListener('click', async () => {
 
 function editarTarefa(indice) {
     const li = listaTarefas.children[indice];
-    const taskContent = li.querySelector('.task-content');
-    const taskActions = li.querySelector('.task-actions');
+    const span = li.querySelector('.texto-tarefa');
+    const divBotoes = li.querySelector('.botoes-tarefa');
 
-    const editInput = document.createElement('input');
-    editInput.type = 'text';
-    editInput.value = tarefas[indice].descricao;
-    editInput.classList.add('task-edit-input');
+    const inputEdicao = document.createElement('input');
+    inputEdicao.type = 'text';
+    inputEdicao.value = tarefas[indice].descricao;
+    inputEdicao.classList.add('input-edicao');
 
-    li.insertBefore(editInput, taskContent);
-    li.removeChild(taskContent);
+    li.insertBefore(inputEdicao, span);
+    li.removeChild(span);
 
-    taskActions.innerHTML = '';
+    divBotoes.innerHTML = '';
 
-    const saveBtn = document.createElement('button');
-    saveBtn.textContent = 'Salvar';
-    saveBtn.classList.add('task-btn', 'save-btn');
-    saveBtn.addEventListener('click', async () => {
-        const valorEditado = editInput.value.trim();
+    const botaoSalvar = document.createElement('button');
+    botaoSalvar.textContent = 'Salvar';
+    botaoSalvar.classList.add('botao-editar');
+    botaoSalvar.addEventListener('click', async () => {
+        const valorEditado = inputEdicao.value.trim();
         if (valorEditado) {
             try {
                 mostrarCarregamento();
@@ -204,16 +192,16 @@ function editarTarefa(indice) {
         }
     });
 
-    const cancelBtn = document.createElement('button');
-    cancelBtn.textContent = 'Cancelar';
-    cancelBtn.classList.add('task-btn', 'cancel-btn');
-    cancelBtn.addEventListener('click', () => renderizarTarefas());
+    const botaoCancelar = document.createElement('button');
+    botaoCancelar.textContent = 'Cancelar';
+    botaoCancelar.classList.add('botao-excluir');
+    botaoCancelar.addEventListener('click', () => renderizarTarefas());
 
-    taskActions.appendChild(saveBtn);
-    taskActions.appendChild(cancelBtn);
+    divBotoes.appendChild(botaoSalvar);
+    divBotoes.appendChild(botaoCancelar);
     
-    editInput.focus();
-    editInput.select();
+    inputEdicao.focus();
+    inputEdicao.select();
 }
 
 // Inicia carregando as tarefas
