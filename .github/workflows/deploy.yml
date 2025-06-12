@@ -155,9 +155,9 @@ jobs:
           -p 5435:5432 \
           - DB_HOST=db
           - DB_PORT=5432
-          - POSTGRES_DB=tarefas_db  
+          - DB_NAME=tarefas_db \ 
           - DB_USER=postgres
-          - POSTGRES_USER=postgres
+          - DB_PASSWORD=postgres123 \
           -v postgres_data:/var/lib/postgresql/data \
           --health-cmd="pg_isready -U postgres -d tarefas_db" \
           --health-interval=30s \
