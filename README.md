@@ -17,27 +17,27 @@ Aplicação web para gerenciamento de tarefas com **deploy automatizado**, **an�
 ---
 
 ## 🗂️ Estrutura do Projeto
-
 gerenciador-tarefas/
-├── .github/workflows/
-│ └── deploy.yml # Pipeline CI/CD do GitHub Actions
+├── .github/
+│   └── workflows/
+│       └── deploy.yml                
 ├── back-end/
-│ ├── controllers/
-│ │ └── tarefasController.js
-│ ├── node_modules/
-│ ├── db.js # Conexão com o banco
-│ ├── index.js # Arquivo principal da API
-│ ├── init.sql # Script de criação da tabela
-│ ├── package.json
-│ └── routes.js # Rotas da API
+│   ├── controllers/
+│   │   └── tarefasController.js
+│   ├── node_modules/
+│   ├── db.js                          
+│   ├── index.js                       
+│   ├── init.sql                      
+│   ├── package.json
+│   └── routes.js                      
 ├── front-end/
-│ ├── index.html
-│ ├── index.js
-│ └── styles.css
-├── init.sql # Script SQL global
-├── dockerfile # Dockerfile da aplicação
-├── docker-compose.yml # Orquestração com Docker Compose
-├── sonar-project.properties # Configuração da análise SonarQube
+│   ├── index.html
+│   ├── index.js
+│   └── styles.css
+├── init.sql                           
+├── dockerfile                         
+├── docker-compose.yml                
+├── sonar-project.properties           
 └── README.md
 
 ## 🚀 Tecnologias Utilizadas
