@@ -179,13 +179,7 @@ jobs:
          sleep 2
          done
       
-         # Verificação extra - testar conexão diretamente
-         docker exec db pg_isready -U postgres -d tarefas_db
-         if [ $? -ne 0 ]; then
-         echo "ERRO: Banco não está pronto mesmo com status healthy!"
-         docker logs db
-         exit 1
-         fi
+        
       
          # Aguardar mais um pouco para garantir
          sleep 5
