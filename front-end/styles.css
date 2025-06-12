@@ -4,199 +4,418 @@
     box-sizing: border-box;
 }
 
+:root {
+    --primary-yellow: #fbbf24;
+    --yellow-dark: #f59e0b;
+    --yellow-light: #fcd34d;
+    --black: #000000;
+    --dark-bg: #0f0f0f;
+    --dark-card: #1a1a1a;
+    --dark-card-hover: #252525;
+    --dark-border: #333333;
+    --dark-text: #ffffff;
+    --dark-text-secondary: #a3a3a3;
+    --dark-text-muted: #737373;
+    --danger: #dc2626;
+    --danger-hover: #b91c1c;
+    --shadow-dark: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
+    --shadow-lg-dark: 0 20px 50px -12px rgba(0, 0, 0, 0.7);
+    --gradient-yellow: linear-gradient(135deg, var(--primary-yellow) 0%, var(--yellow-dark) 100%);
+}
+
 body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background: linear-gradient(135deg, #667eea 0%, #9d61da 100%);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--black);
     min-height: 100vh;
     padding: 20px;
+    color: var(--dark-text);
 }
 
-.container {
-    max-width: 800px;
+.app-container {
+    max-width: 900px;
     margin: 0 auto;
-    background: white;
-    border-radius: 15px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-    overflow: hidden;
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    gap: 30px;
+    min-height: calc(100vh - 40px);
 }
 
-header {
-    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-    color: white;
+/* Sidebar */
+.sidebar {
+    background: var(--dark-card);
+    border: 1px solid var(--dark-border);
+    border-radius: 20px;
     padding: 30px;
-    text-align: center;
+    box-shadow: var(--shadow-dark);
+    height: fit-content;
+    position: sticky;
+    top: 20px;
 }
 
-header h1 {
-    font-size: 2.5rem;
-    font-weight: 300;
+.logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 40px;
 }
 
-main {
-    padding: 30px;
+.logo-icon {
+    width: 40px;
+    height: 40px;
+    background: var(--gradient-yellow);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    color: var(--black);
 }
 
-.adicionar-tarefa {
+.logo h1 {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--dark-text);
+}
+
+.stats {
+    background: var(--dark-bg);
+    border: 1px solid var(--dark-border);
+    border-radius: 16px;
+    padding: 20px;
     margin-bottom: 30px;
 }
 
-#form-tarefa {
+.stat-item {
     display: flex;
-    gap: 15px;
+    justify-content: space-between;
     align-items: center;
+    margin-bottom: 12px;
 }
 
-#entrada-tarefa {
-    flex: 1;
-    padding: 15px;
+.stat-item:last-child {
+    margin-bottom: 0;
+}
+
+.stat-label {
+    color: var(--dark-text-muted);
+    font-size: 14px;
+}
+
+.stat-value {
+    font-weight: 600;
+    color: var(--primary-yellow);
     font-size: 16px;
-    border: 2px solid #e1e5e9;
-    border-radius: 10px;
-    outline: none;
-    transition: border-color 0.3s ease;
 }
 
-#entrada-tarefa:focus {
-    border-color: #4facfe;
+.quick-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
 }
 
-#form-tarefa button {
-    padding: 15px 30px;
-    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-    color: white;
+.quick-action-btn {
+    padding: 12px 16px;
     border: none;
-    border-radius: 10px;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.clear-all-btn {
+    background: var(--danger);
+    color: var(--dark-text);
+}
+
+.clear-all-btn:hover {
+    background: var(--danger-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 15px rgba(220, 38, 38, 0.3);
+}
+
+/* Main Content */
+.main-content {
+    background: var(--dark-card);
+    border: 1px solid var(--dark-border);
+    border-radius: 20px;
+    padding: 40px;
+    box-shadow: var(--shadow-dark);
+    display: flex;
+    flex-direction: column;
+}
+
+.header {
+    margin-bottom: 30px;
+}
+
+.header h2 {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--dark-text);
+    margin-bottom: 8px;
+}
+
+.header p {
+    color: var(--dark-text-secondary);
+    font-size: 16px;
+}
+
+/* Task Input */
+.task-input-section {
+    margin-bottom: 30px;
+}
+
+.task-form {
+    display: flex;
+    gap: 12px;
+    align-items: stretch;
+}
+
+.task-input {
+    flex: 1;
+    padding: 16px 20px;
+    border: 2px solid var(--dark-border);
+    border-radius: 16px;
+    font-size: 16px;
+    outline: none;
+    transition: all 0.2s ease;
+    background: var(--dark-bg);
+    color: var(--dark-text);
+}
+
+.task-input:focus {
+    border-color: var(--primary-yellow);
+    box-shadow: 0 0 0 4px rgba(251, 191, 36, 0.2);
+}
+
+.task-input::placeholder {
+    color: var(--dark-text-muted);
+}
+
+.add-btn {
+    padding: 16px 24px;
+    background: var(--gradient-yellow);
+    color: var(--black);
+    border: none;
+    border-radius: 16px;
     font-size: 16px;
     font-weight: 600;
     cursor: pointer;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
-#form-tarefa button:hover {
+.add-btn:hover {
     transform: translateY(-2px);
-    box-shadow: 0 5px 15px rgba(79, 172, 254, 0.4);
+    box-shadow: var(--shadow-lg-dark);
+    background: linear-gradient(135deg, var(--yellow-light) 0%, var(--primary-yellow) 100%);
 }
 
-.cabecalho-lista {
+/* Task List */
+.tasks-section {
+    flex: 1;
+}
+
+.tasks-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 20px;
 }
 
-.cabecalho-lista h2 {
-    color: #333;
-    font-weight: 300;
+.tasks-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--dark-text);
 }
 
-.botao-excluir-todas {
-    padding: 10px 20px;
-    background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
-    color: white;
-    border: none;
-    border-radius: 8px;
+.task-count {
+    background: var(--gradient-yellow);
+    color: var(--black);
+    padding: 4px 12px;
+    border-radius: 20px;
     font-size: 14px;
-    cursor: pointer;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    font-weight: 600;
 }
 
-.botao-excluir-todas:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 5px 15px rgba(255, 107, 107, 0.4);
-}
-
-#lista-tarefas {
+.tasks-list {
     list-style: none;
-}
-
-.item-tarefa {
-    background: #f8f9fa;
-    border: 1px solid #e9ecef;
-    border-radius: 10px;
-    padding: 20px;
-    margin-bottom: 15px;
     display: flex;
-    justify-content: space-between;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.task-item {
+    background: var(--dark-bg);
+    border: 1px solid var(--dark-border);
+    border-radius: 16px;
+    padding: 20px;
+    display: flex;
     align-items: center;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    gap: 16px;
+    transition: all 0.2s ease;
+    position: relative;
+    overflow: hidden;
 }
 
-.item-tarefa:hover {
+.task-item::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+    width: 4px;
+    background: var(--gradient-yellow);
+}
+
+.task-item:hover {
     transform: translateY(-2px);
-    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-dark);
+    background: var(--dark-card-hover);
+    border-color: var(--primary-yellow);
 }
 
-.texto-tarefa {
+.task-icon {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--primary-yellow);
+    flex-shrink: 0;
+}
+
+.task-content {
     flex: 1;
     font-size: 16px;
-    color: #333;
+    color: var(--dark-text);
     word-break: break-word;
 }
 
-.input-edicao {
+.task-edit-input {
     flex: 1;
-    padding: 10px;
-    font-size: 16px;
-    border: 2px solid #4facfe;
+    padding: 8px 12px;
+    border: 2px solid var(--primary-yellow);
     border-radius: 8px;
+    font-size: 16px;
     outline: none;
-    margin-right: 15px;
+    background: var(--dark-bg);
+    color: var(--dark-text);
 }
 
-.botoes-tarefa {
+.task-actions {
     display: flex;
-    gap: 10px;
+    gap: 8px;
 }
 
-.botao-editar, .botao-excluir {
-    padding: 8px 16px;
+.task-btn {
+    padding: 8px 12px;
     border: none;
-    border-radius: 6px;
-    font-size: 14px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 500;
     cursor: pointer;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    transition: all 0.2s ease;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
-.botao-editar {
-    background: linear-gradient(135deg, #feca57 0%, #ff9ff3 100%);
-    color: white;
+.edit-btn {
+    background: var(--primary-yellow);
+    color: var(--black);
 }
 
-.botao-excluir {
-    background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
-    color: white;
+.edit-btn:hover {
+    background: var(--yellow-dark);
+    transform: translateY(-1px);
 }
 
-.botao-editar:hover, .botao-excluir:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+.delete-btn {
+    background: var(--danger);
+    color: var(--dark-text);
 }
 
-.mensagem-vazia {
+.delete-btn:hover {
+    background: var(--danger-hover);
+    transform: translateY(-1px);
+}
+
+.save-btn {
+    background: var(--primary-yellow);
+    color: var(--black);
+}
+
+.save-btn:hover {
+    background: var(--yellow-dark);
+    transform: translateY(-1px);
+}
+
+.cancel-btn {
+    background: var(--dark-text-muted);
+    color: var(--dark-text);
+}
+
+.cancel-btn:hover {
+    background: #525252;
+    transform: translateY(-1px);
+}
+
+/* Empty State */
+.empty-state {
     text-align: center;
-    padding: 40px;
-    color: #6c757d;
-    font-size: 18px;
+    padding: 60px 20px;
 }
 
-.loading {
+.empty-icon {
+    width: 80px;
+    height: 80px;
+    background: var(--dark-bg);
+    border: 2px solid var(--dark-border);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 20px;
+    font-size: 32px;
+    color: var(--primary-yellow);
+}
+
+.empty-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--dark-text);
+    margin-bottom: 8px;
+}
+
+.empty-text {
+    color: var(--dark-text-secondary);
+    font-size: 16px;
+}
+
+/* Loading */
+.loading-overlay {
     position: fixed;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.5);
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(4px);
     display: flex;
-    justify-content: center;
     align-items: center;
+    justify-content: center;
     z-index: 1000;
 }
 
-.spinner {
+.loading-spinner {
     width: 50px;
     height: 50px;
-    border: 5px solid #f3f3f3;
-    border-top: 5px solid #4facfe;
+    border: 4px solid var(--dark-border);
+    border-top: 4px solid var(--primary-yellow);
     border-radius: 50%;
     animation: spin 1s linear infinite;
 }
@@ -206,46 +425,46 @@ main {
     100% { transform: rotate(360deg); }
 }
 
+/* Responsive */
 @media (max-width: 768px) {
-    .container {
-        margin: 10px;
-        border-radius: 10px;
+    body {
+        padding: 10px;
     }
-    
-    header {
-        padding: 20px;
+
+    .app-container {
+        grid-template-columns: 1fr;
+        gap: 20px;
     }
-    
-    header h1 {
-        font-size: 2rem;
+
+    .sidebar {
+        position: relative;
+        top: 0;
+        order: 2;
     }
-    
-    main {
-        padding: 20px;
+
+    .main-content {
+        padding: 30px 20px;
+        order: 1;
     }
-    
-    #form-tarefa {
+
+    .task-form {
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .task-item {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+    }
+
+    .task-actions {
+        justify-content: center;
+    }
+
+    .tasks-header {
         flex-direction: column;
         gap: 10px;
-    }
-    
-    #entrada-tarefa, #form-tarefa button {
-        width: 100%;
-    }
-    
-    .cabecalho-lista {
-        flex-direction: column;
-        gap: 15px;
-        align-items: stretch;
-    }
-    
-    .item-tarefa {
-        flex-direction: column;
-        gap: 15px;
-        align-items: stretch;
-    }
-    
-    .botoes-tarefa {
-        justify-content: center;
+        align-items: center;
     }
 }

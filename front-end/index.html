@@ -3,47 +3,79 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gerenciador de Tarefas</title>
+    <title>TaskFlow - Gerenciador Moderno</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>📋 Gerenciador de Tarefas</h1>
-        </header>
-        
-        <main>
-            <section class="adicionar-tarefa">
-                <form id="form-tarefa">
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">
+                <div class="logo-icon">⚡</div>
+                <h1>TaskFlow</h1>
+            </div>
+            
+            <div class="stats">
+                <div class="stat-item">
+                    <span class="stat-label">Total de Tarefas</span>
+                    <span class="stat-value" id="total-tasks">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Concluídas Hoje</span>
+                    <span class="stat-value" id="completed-today">0</span>
+                </div>
+            </div>
+            
+            <div class="quick-actions">
+                <button id="botao-excluir-todas" class="quick-action-btn clear-all-btn">
+                    🗑️ Limpar Todas
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="header">
+                <h2>Suas Tarefas</h2>
+                <p>Organize seu dia e aumente sua produtividade</p>
+            </div>
+
+            <section class="task-input-section">
+                <form id="form-tarefa" class="task-form">
                     <input 
                         type="text" 
                         id="entrada-tarefa" 
+                        class="task-input"
                         placeholder="Digite uma nova tarefa..." 
                         required
                     >
-                    <button type="submit">Adicionar</button>
+                    <button type="submit" class="add-btn">
+                        ➕ Adicionar
+                    </button>
                 </form>
             </section>
-            
-            <section class="lista-container">
-                <div class="cabecalho-lista">
-                    <h2>Suas Tarefas</h2>
-                    <button id="botao-excluir-todas" class="botao-excluir-todas">
-                        Excluir Todas
-                    </button>
+
+            <section class="tasks-section">
+                <div class="tasks-header">
+                    <h3 class="tasks-title">Lista de Tarefas</h3>
+                    <span class="task-count" id="task-counter">0</span>
                 </div>
-                <ul id="lista-tarefas"></ul>
-                <div id="mensagem-vazia" class="mensagem-vazia" style="display: none;">
-                    <p>Nenhuma tarefa encontrada. Adicione uma nova tarefa!</p>
+                
+                <ul id="lista-tarefas" class="tasks-list"></ul>
+                
+                <div id="mensagem-vazia" class="empty-state" style="display: none;">
+                    <div class="empty-icon">📝</div>
+                    <h3 class="empty-title">Nenhuma tarefa ainda</h3>
+                    <p class="empty-text">Comece adicionando sua primeira tarefa acima!</p>
                 </div>
             </section>
         </main>
     </div>
     
-    <div id="loading" class="loading" style="display: none;">
-        <div class="spinner"></div>
+    <div id="loading" class="loading-overlay" style="display: none;">
+        <div class="loading-spinner"></div>
     </div>
     
-    <script src="index.js"></script>
+    <script src="script.js"></script>
 </body>
 </html>
