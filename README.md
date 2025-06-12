@@ -54,15 +54,15 @@ gerenciador-tarefas/
 
 ## Aplicação rodando em containers diferentes
 
-https://github.com/Wilton-Monteiro/gerenciador-tarefas/issues/1#issue-3141691587
+![Image](https://github.com/user-attachments/assets/839c06c0-a705-450e-a07c-92406ffb3756)
 
 ## Repositório ativo no Docker hub
 
-https://github.com/Wilton-Monteiro/gerenciador-tarefas/issues/2
+![Image](https://github.com/user-attachments/assets/b864e707-5bfe-4ee1-ad3a-b314330f85c4)
 
 ## Imagem da aplicação rodando localmente
 
-https://github.com/Wilton-Monteiro/gerenciador-tarefas/issues/3
+![Image](https://github.com/user-attachments/assets/0605157d-1ef8-46ef-9530-7d76a9165459)
 
 Análise de erros:
 
