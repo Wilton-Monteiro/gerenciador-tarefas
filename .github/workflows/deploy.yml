@@ -28,7 +28,7 @@ jobs:
         with:
           context: .
           push: true
-          tags: docker push willmonteiro/gerenciador-tarefas:04
+          tags: willmonteiro/gerenciador-tarefas:04
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
