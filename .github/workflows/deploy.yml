@@ -42,7 +42,9 @@ jobs:
       - name: Subir SonarQube temporário no servidor remoto (com checagem)
         run: |
           ssh -o StrictHostKeyChecking=no aluno@201.23.3.86 '
+            echo "Iniciando SonarQube temporário..."
             docker stop sonartmp || true && docker rm sonartmp || true
+            echo "stopando"
             docker pull sonarqube:community
             docker run -d --name sonartmp -p 8250:9000 sonarqube:community
             sleep 10
