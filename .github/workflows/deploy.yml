@@ -39,6 +39,15 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
 
+      - name: Verificar recursos do servidor
+        run: |
+           ssh -o StrictHostKeyChecking=no aluno@201.23.3.86 '
+           echo "=== Verificando recursos ==="
+           free -h
+           df -h
+           echo "=========================="
+           '
+
       - name: Subir SonarQube temporário no servidor remoto (com checagem)
         run: |
           ssh -o StrictHostKeyChecking=no aluno@201.23.3.86 '
